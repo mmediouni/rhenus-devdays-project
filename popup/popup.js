@@ -59,17 +59,20 @@ async function refreshPageHistory() {
 async function handleCapture() {
   const captureBtn = document.getElementById('btn-capture');
   const labelInput = document.getElementById('snapshot-label');
+  const chkFullPage = document.getElementById('chk-fullpage');
   const label = labelInput.value.trim();
+  const captureFullPage = chkFullPage ? chkFullPage.checked : true;
 
   try {
     captureBtn.classList.add('loading');
     captureBtn.disabled = true;
-    showStatus('Capturing screen, DOM & CSS...', 'loading');
+    showStatus(captureFullPage ? 'Capturing viewport, full page & DOM...' : 'Capturing viewport, DOM & CSS...', 'loading');
 
     const response = await chrome.runtime.sendMessage({
       action: 'TAKE_SNAPSHOT',
       payload: {
         label,
+        captureFullPage,
         tabId: currentTab.id
       }
     });

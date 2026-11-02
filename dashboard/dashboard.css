@@ -629,6 +629,12 @@ body {
 .tab-sub-controls {
   display: flex;
   align-items: center;
+  gap: 16px;
+}
+
+.sub-control-group {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 

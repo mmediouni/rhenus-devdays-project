@@ -78,20 +78,24 @@ flowchart TD
 
 ## ✨ Core Features
 
-### 1. Comprehensive Multi-Layer Snapshotting
-A snapshot captures four distinct layers simultaneously:
-- **Visual Layer**: High-definition PNG screenshot via Chrome's native capture pipeline.
+### 1. Dual-Scope Multi-Layer Snapshotting
+A snapshot captures four distinct layers simultaneously, with dual visual scopes:
+- **Visual Layer (Dual Screenshots)**:
+  - 👁️ **Visible Viewport Screenshot**: High-speed, high-definition capture of the immediate screen viewport.
+  - 📜 **Full-Page Stitched Screenshot**: Automatically scrolls from top to bottom, hides fixed/sticky navigation repetitions, captures high-DPI slices, and stitches them on an offscreen canvas into a single continuous image.
 - **Structural Layer**: Complete outer HTML, doctype, and element count metrics (buttons, links, scripts, inputs, images).
 - **Styling Layer**: Embedded `<style>` rules, external CSS rules, and computed styles for crucial landmarks (`body`, `header`, `nav`, `main`, `footer`, `h1`, `button`, etc.).
 - **Environment Metadata**: Page URL, domain, title, window dimensions, device pixel ratio (DPR), and scroll offsets.
 
 ### 2. Quick-Compare Popup
 - **Instant Delta Badge**: Calculates the visual regression percentage between the baseline and the latest snapshot right in the popup (`0.00% Match` or `⚠️ 2.45% Diff`).
+- **Full-Page Toggle**: Option to enable/disable full-page capture alongside the standard viewport screenshot.
 - **Page Timeline**: Lists historical snapshots taken on the current URL.
 - **One-Click Jump**: Launch directly into the full comparison studio.
 
 ### 3. Regression Studio Dashboard
 A full-screen dashboard organized into:
+- **Scope Switcher**: Seamlessly toggle between **👁️ Viewport View** and **📜 Full Page View**—instantly recalculating regressions and updating all comparison modes for the chosen perspective.
 - **Left Sidebar**: Filter snapshots by page domain, search by page title or snapshot label, and view chronological snapshot timelines.
 - **Top Bar**: Set any snapshot as **Baseline (Reference A)** and any other as **Comparison (Target B)**.
 - **Top Metrics**: Displays real-time regression status, pixel differences count, and percentage.

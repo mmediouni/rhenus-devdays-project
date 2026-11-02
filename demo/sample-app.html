@@ -172,6 +172,34 @@
     <div class="actions">
       <button class="btn-buy" id="checkout-btn">Proceed to Checkout &rarr;</button>
     </div>
+
+    <!-- Long scroll sections to test full page capture -->
+    <div style="margin-top: 36px; border-top: 1px solid var(--border); padding-top: 24px;">
+      <h3 style="margin-bottom: 12px; font-size: 15px;">Technical Specifications</h3>
+      <ul style="padding-left: 20px; font-size: 13px; color: var(--subtext); line-height: 1.8;" id="spec-list">
+        <li>Driver Diameter: 40mm Titanium Dynamic Drivers</li>
+        <li>Bluetooth Version: 5.3 with Multipoint Connect</li>
+        <li>Battery Capacity: 850mAh (Up to 45 hours playback)</li>
+        <li>Charging: USB-C Fast Charge (10 min = 5 hours)</li>
+        <li>Weight: 248 grams</li>
+      </ul>
+    </div>
+
+    <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 24px;">
+      <h3 style="margin-bottom: 12px; font-size: 15px;">Customer Reviews &amp; Ratings</h3>
+      <div style="display: flex; flex-direction: column; gap: 12px;" id="reviews-container">
+        <div style="padding: 12px; background: #f1f5f9; border-radius: 6px; font-size: 12px;">
+          <strong>⭐⭐⭐⭐⭐ Sarah L.</strong> — <em>"Incredible active noise cancellation for remote work."</em>
+        </div>
+        <div style="padding: 12px; background: #f1f5f9; border-radius: 6px; font-size: 12px;">
+          <strong>⭐⭐⭐⭐⭐ Marc K.</strong> — <em>"Battery lasts the entire week without needing a recharge."</em>
+        </div>
+      </div>
+    </div>
+
+    <footer style="margin-top: 30px; border-top: 1px solid var(--border); padding-top: 20px; font-size: 11px; color: var(--subtext); text-align: center;" id="page-footer">
+      &copy; 2026 Acme Electronics Corp. All rights reserved. &bull; Privacy Policy &bull; Terms of Service
+    </footer>
   </div>
 
   <!-- Interactive Controls to simulate UI changes/regressions -->
@@ -179,12 +207,13 @@
     <h4>🧪 UI Regression Simulator Controls</h4>
     <p>1. Take snapshot #1 with the extension (Baseline)<br>
        2. Click any of the buttons below to introduce a visual/CSS/DOM change<br>
-       3. Take snapshot #2 with the extension &amp; inspect in the Dashboard!
+       3. Take snapshot #2 with the extension &amp; switch between <strong>👁️ Viewport</strong> and <strong>📜 Full Page</strong> in the Dashboard!
     </p>
     <div class="sim-buttons">
-      <button class="btn-sim" onclick="changeButtonColor()">🎨 Change Button Color (CSS)</button>
+      <button class="btn-sim" onclick="changeButtonColor()">🎨 Change Button Color (Above Fold)</button>
       <button class="btn-sim" onclick="shiftPadding()">📐 Shift Padding &amp; Size (Layout)</button>
       <button class="btn-sim" onclick="changeCopyAndPrice()">✍️ Modify Price &amp; Copy (DOM)</button>
+      <button class="btn-sim" onclick="changeFooterBelowFold()">📜 Modify Footer (Below Fold Regression)</button>
       <button class="btn-sim" onclick="resetPage()">🔄 Reset to Baseline</button>
     </div>
   </div>
@@ -210,6 +239,15 @@
       document.getElementById('order-badge').style.color = '#92400e';
     }
 
+    function changeFooterBelowFold() {
+      const footer = document.getElementById('page-footer');
+      footer.style.backgroundColor = '#fecdd3';
+      footer.style.color = '#9f1239';
+      footer.style.padding = '30px';
+      footer.style.borderRadius = '8px';
+      footer.textContent = '⚠️ NOTICE: Warranty policy updated. Unregistered units may incur restocking fees.';
+    }
+
     function resetPage() {
       const btn = document.getElementById('checkout-btn');
       btn.style.backgroundColor = '';
@@ -225,6 +263,13 @@
       badge.textContent = 'In Stock';
       badge.style.background = '';
       badge.style.color = '';
+
+      const footer = document.getElementById('page-footer');
+      footer.style.backgroundColor = '';
+      footer.style.color = '';
+      footer.style.padding = '';
+      footer.style.borderRadius = '';
+      footer.innerHTML = '&copy; 2026 Acme Electronics Corp. All rights reserved. &bull; Privacy Policy &bull; Terms of Service';
     }
   </script>
 </body>

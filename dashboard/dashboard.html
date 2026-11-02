@@ -173,12 +173,26 @@
 
           <!-- Tab-specific Toolbar -->
           <div id="visual-mode-controls" class="tab-sub-controls">
-            <span class="sub-label">Mode:</span>
-            <div class="segmented-control">
-              <button class="segment-btn active" data-mode="side-by-side">Side-by-Side</button>
-              <button class="segment-btn" data-mode="slider">Slider Wipe</button>
-              <button class="segment-btn" data-mode="diff-mask">Diff Mask</button>
-              <button class="segment-btn" data-mode="onion">Onion Skin</button>
+            <div class="sub-control-group">
+              <span class="sub-label">Scope:</span>
+              <div class="segmented-control">
+                <button class="segment-btn active" id="btn-scope-viewport" data-scope="viewport" title="Visible browser viewport screenshot">
+                  👁️ Viewport
+                </button>
+                <button class="segment-btn" id="btn-scope-fullpage" data-scope="fullpage" title="Complete full page screenshot from top to bottom">
+                  📜 Full Page
+                </button>
+              </div>
+            </div>
+
+            <div class="sub-control-group">
+              <span class="sub-label">Mode:</span>
+              <div class="segmented-control">
+                <button class="segment-btn active" data-mode="side-by-side">Side-by-Side</button>
+                <button class="segment-btn" data-mode="slider">Slider Wipe</button>
+                <button class="segment-btn" data-mode="diff-mask">Diff Mask</button>
+                <button class="segment-btn" data-mode="onion">Onion Skin</button>
+              </div>
             </div>
           </div>
         </div>

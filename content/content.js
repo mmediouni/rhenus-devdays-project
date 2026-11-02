@@ -8,6 +8,8 @@
   if (window.__UI_REGRESSION_DETECTOR_LOADED__) return;
   window.__UI_REGRESSION_DETECTOR_LOADED__ = true;
 
+  let hiddenFixedElements = [];
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'EXTRACT_PAGE_SNAPSHOT') {
       try {
@@ -19,7 +21,68 @@
       }
       return true; // asynchronous response keep-alive
     }
+
+    if (message.action === 'SCROLL_FOR_FULLPAGE_SLICE') {
+      try {
+        const { x, y, hideFixed = false } = message.payload || {};
+
+        if (hideFixed && hiddenFixedElements.length === 0) {
+          hideStickyAndFixedElements();
+        }
+
+        window.scrollTo({ left: x || 0, top: y || 0, behavior: 'instant' });
+
+        // Allow layout/paint to settle
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            sendResponse({
+              success: true,
+              actualY: window.scrollY,
+              actualX: window.scrollX
+            });
+          }, 80);
+        });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+      return true;
+    }
+
+    if (message.action === 'RESTORE_AFTER_FULLPAGE') {
+      try {
+        const { originalScrollX = 0, originalScrollY = 0 } = message.payload || {};
+        restoreStickyAndFixedElements();
+        window.scrollTo({ left: originalScrollX, top: originalScrollY, behavior: 'instant' });
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+      return true;
+    }
   });
+
+  function hideStickyAndFixedElements() {
+    const all = document.querySelectorAll('*');
+    for (const el of all) {
+      const style = window.getComputedStyle(el);
+      if (style.position === 'fixed' || style.position === 'sticky') {
+        hiddenFixedElements.push({
+          el,
+          originalVisibility: el.style.visibility
+        });
+        el.style.visibility = 'hidden';
+      }
+    }
+  }
+
+  function restoreStickyAndFixedElements() {
+    for (const item of hiddenFixedElements) {
+      if (item.el) {
+        item.el.style.visibility = item.originalVisibility || '';
+      }
+    }
+    hiddenFixedElements = [];
+  }
 
   function collectSnapshotData() {
     const title = document.title || 'Untitled Page';

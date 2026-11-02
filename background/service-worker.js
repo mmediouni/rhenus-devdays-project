@@ -70,12 +70,26 @@ async function handleTakeSnapshot(payload = {}) {
     throw new Error('No data received from page content script.');
   }
 
-  // 2. Capture high-resolution screenshot
+  // 2. Capture high-resolution visible viewport screenshot
   const screenshotDataUrl = await chrome.tabs.captureVisibleTab(activeTab.windowId, {
     format: 'png'
   });
 
-  // 3. Assemble snapshot record
+  // 3. Capture full-page stitched screenshot (top to bottom)
+  let fullScreenshotDataUrl = null;
+  const captureFull = payload.captureFullPage !== false; // default true
+  if (captureFull && pageData.data.viewport) {
+    try {
+      fullScreenshotDataUrl = await captureFullPageStitched(activeTab.id, activeTab.windowId, pageData.data.viewport);
+    } catch (fullErr) {
+      console.warn('[Service Worker] Full-page capture failed, falling back to viewport:', fullErr);
+      fullScreenshotDataUrl = screenshotDataUrl;
+    }
+  } else {
+    fullScreenshotDataUrl = screenshotDataUrl;
+  }
+
+  // 4. Assemble snapshot record
   const timestamp = Date.now();
   const dateObj = new Date(timestamp);
   const dateFormatted = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString();
@@ -103,6 +117,7 @@ async function handleTakeSnapshot(payload = {}) {
     title: activeTab.title || 'Untitled',
     label: label.trim() || `Snapshot at ${dateObj.toLocaleTimeString()}`,
     screenshot: screenshotDataUrl,
+    fullScreenshot: fullScreenshotDataUrl || screenshotDataUrl,
     viewport: pageData.data.viewport,
     meta: pageData.data.meta,
     dom: pageData.data.dom,
@@ -165,5 +180,93 @@ function sendTabMessageWithRetry(tabId, message) {
       resolve(response);
     });
   });
+}
+
+/**
+ * Capture full-page screenshot by scrolling and stitching slices
+ */
+async function captureFullPageStitched(tabId, windowId, viewport) {
+  const { width, height, dpr = 1, scrollHeight, scrollX: origX = 0, scrollY: origY = 0 } = viewport;
+  const totalHeight = Math.max(height, scrollHeight);
+
+  // If page does not exceed visible viewport, no need to stitch
+  if (totalHeight <= height) {
+    return await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+  }
+
+  // Calculate slice Y positions
+  const slices = [];
+  let curY = 0;
+  while (curY < totalHeight) {
+    slices.push(curY);
+    if (curY + height >= totalHeight) break;
+    curY += height;
+    if (curY + height > totalHeight) {
+      curY = totalHeight - height;
+    }
+  }
+
+  const capturedSlices = [];
+
+  try {
+    for (let i = 0; i < slices.length; i++) {
+      const yPos = slices[i];
+      const isFirst = i === 0;
+
+      // Scroll to slice position (hide sticky/fixed headers after first slice)
+      await sendTabMessageWithRetry(tabId, {
+        action: 'SCROLL_FOR_FULLPAGE_SLICE',
+        payload: { x: 0, y: yPos, hideFixed: !isFirst }
+      });
+
+      // Small delay for browser rendering/paint to settle
+      await new Promise(r => setTimeout(r, 120));
+
+      const sliceDataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+      capturedSlices.push({
+        yPos,
+        dataUrl: sliceDataUrl
+      });
+    }
+  } finally {
+    // Always restore scroll position and unhide fixed elements
+    await sendTabMessageWithRetry(tabId, {
+      action: 'RESTORE_AFTER_FULLPAGE',
+      payload: { originalScrollX: origX, originalScrollY: origY }
+    });
+  }
+
+  // Stitch slices onto an OffscreenCanvas
+  const canvasWidth = Math.round(width * dpr);
+  const canvasHeight = Math.round(totalHeight * dpr);
+  const offscreen = new OffscreenCanvas(canvasWidth, canvasHeight);
+  const ctx = offscreen.getContext('2d');
+
+  for (const slice of capturedSlices) {
+    const res = await fetch(slice.dataUrl);
+    const blob = await res.blob();
+    const bitmap = await createImageBitmap(blob);
+
+    const destY = Math.round(slice.yPos * dpr);
+    ctx.drawImage(bitmap, 0, destY);
+  }
+
+  const resultBlob = await offscreen.convertToBlob({ type: 'image/png' });
+  return await blobToDataUrl(resultBlob);
+}
+
+/**
+ * Convert Blob to Data URL in service worker without FileReader
+ */
+async function blobToDataUrl(blob) {
+  const buffer = await blob.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  const chunkSize = 8192;
+  for (let i = 0; i < len; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, len)));
+  }
+  return `data:image/png;base64,${btoa(binary)}`;
 }
 

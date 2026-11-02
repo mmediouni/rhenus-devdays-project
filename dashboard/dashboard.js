@@ -29,6 +29,7 @@ let selectedPageKey = null;
 let baselineSnap = null;
 let currentSnap = null;
 let currentDiffResult = null;
+let activeVisualScope = 'viewport'; // 'viewport' | 'fullpage'
 let activeVisualMode = 'side-by-side';
 let activeCodeDiffMode = 'unified'; // or 'split'
 
@@ -56,6 +57,14 @@ function setupEventListeners() {
       switchTab(btn.dataset.tab);
     });
   });
+
+  // Scope toggle (Viewport vs Full Page)
+  const btnScopeVp = document.getElementById('btn-scope-viewport');
+  const btnScopeFp = document.getElementById('btn-scope-fullpage');
+  if (btnScopeVp && btnScopeFp) {
+    btnScopeVp.addEventListener('click', () => setVisualScope('viewport'));
+    btnScopeFp.addEventListener('click', () => setVisualScope('fullpage'));
+  }
 
   // Visual mode segments (Side-by-side, slider, diff-mask, onion)
   document.querySelectorAll('.segment-btn').forEach(btn => {
@@ -356,6 +365,44 @@ function setCurrent(id) {
   }
 }
 
+function getActiveImages() {
+  if (activeVisualScope === 'fullpage') {
+    return {
+      imgA: (baselineSnap && baselineSnap.fullScreenshot) || (baselineSnap && baselineSnap.screenshot),
+      imgB: (currentSnap && currentSnap.fullScreenshot) || (currentSnap && currentSnap.screenshot),
+      label: 'Full Page'
+    };
+  }
+  return {
+    imgA: baselineSnap && baselineSnap.screenshot,
+    imgB: currentSnap && currentSnap.screenshot,
+    label: 'Viewport'
+  };
+}
+
+async function setVisualScope(scope) {
+  activeVisualScope = scope;
+  const btnVp = document.getElementById('btn-scope-viewport');
+  const btnFp = document.getElementById('btn-scope-fullpage');
+  if (btnVp) btnVp.classList.toggle('active', scope === 'viewport');
+  if (btnFp) btnFp.classList.toggle('active', scope === 'fullpage');
+
+  await runVisualComparison();
+}
+
+async function runVisualComparison() {
+  if (!baselineSnap || !currentSnap) return;
+  const { imgA, imgB, label } = getActiveImages();
+  if (!imgA || !imgB) return;
+
+  try {
+    currentDiffResult = await compareImages(imgA, imgB);
+    renderVisualComparison(currentDiffResult, imgA, imgB, label);
+  } catch (err) {
+    console.error('Visual compare error:', err);
+  }
+}
+
 /**
  * Runs full comparison (Visual, DOM, CSS, Meta) between baselineSnap & currentSnap
  */
@@ -369,13 +416,8 @@ async function runComparison() {
   document.getElementById('header-baseline-time').textContent = `${baselineSnap.label} • ${baselineSnap.dateFormatted}`;
   document.getElementById('header-current-time').textContent = `${currentSnap.label} • ${currentSnap.dateFormatted}`;
 
-  // 1. Visual comparison
-  try {
-    currentDiffResult = await compareImages(baselineSnap.screenshot, currentSnap.screenshot);
-    renderVisualComparison(currentDiffResult);
-  } catch (err) {
-    console.error('Visual compare error:', err);
-  }
+  // 1. Visual comparison (respects active scope: Viewport vs Fullpage)
+  await runVisualComparison();
 
   // 2. DOM / Code comparison
   renderDomComparison();
@@ -387,14 +429,14 @@ async function runComparison() {
   renderMetadataComparison();
 }
 
-function renderVisualComparison(diff) {
+function renderVisualComparison(diff, imgA, imgB, scopeLabel = 'Viewport') {
   const card = document.getElementById('diff-summary-card');
   const verdictEl = document.getElementById('diff-verdict-title');
   const badgeEl = document.getElementById('diff-percent-badge');
   const statsEl = document.getElementById('diff-stats-detail');
   const iconEl = document.getElementById('diff-status-icon');
 
-  badgeEl.textContent = `${diff.diffPercentage}% Diff`;
+  badgeEl.textContent = `${diff.diffPercentage}% Diff (${scopeLabel})`;
   statsEl.textContent = `${diff.diffPixels.toLocaleString()} of ${diff.totalPixels.toLocaleString()} pixels changed`;
 
   card.classList.remove('status-pass', 'status-warning', 'status-regression');
@@ -420,19 +462,19 @@ function renderVisualComparison(diff) {
   }
 
   // Side-by-side images
-  document.getElementById('img-baseline').src = baselineSnap.screenshot;
-  document.getElementById('img-current').src = currentSnap.screenshot;
+  document.getElementById('img-baseline').src = imgA;
+  document.getElementById('img-current').src = imgB;
 
   // Slider Wipe images
-  document.getElementById('slider-img-baseline').src = baselineSnap.screenshot;
-  document.getElementById('slider-img-current').src = currentSnap.screenshot;
+  document.getElementById('slider-img-baseline').src = imgA;
+  document.getElementById('slider-img-current').src = imgB;
 
   // Diff Mask
-  document.getElementById('img-diff-mask').src = diff.diffDataUrl || baselineSnap.screenshot;
+  document.getElementById('img-diff-mask').src = diff.diffDataUrl || imgA;
 
   // Onion skin
-  document.getElementById('onion-img-baseline').src = baselineSnap.screenshot;
-  document.getElementById('onion-img-current').src = currentSnap.screenshot;
+  document.getElementById('onion-img-baseline').src = imgA;
+  document.getElementById('onion-img-current').src = imgB;
 }
 
 function renderDomComparison() {
@@ -660,6 +702,8 @@ function exportHtmlReport() {
     return;
   }
 
+  const { imgA, imgB, label: scopeLabel } = getActiveImages();
+
   const reportHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -682,24 +726,25 @@ function exportHtmlReport() {
 <body>
   <div class="header">
     <h1>UI Regression Audit Report</h1>
-    <span class="status-badge">${escapeHtml(currentDiffResult.verdict)} &bull; ${currentDiffResult.diffPercentage}% Difference</span>
+    <span class="status-badge">${escapeHtml(currentDiffResult.verdict)} &bull; ${currentDiffResult.diffPercentage}% Difference (${scopeLabel})</span>
     <table class="meta-table">
       <tr><td>URL</td><td><a href="${escapeHtml(currentSnap.url)}" style="color: #38bdf8;" target="_blank">${escapeHtml(currentSnap.url)}</a></td></tr>
       <tr><td>Baseline (A)</td><td>${escapeHtml(baselineSnap.label)} (${baselineSnap.dateFormatted})</td></tr>
       <tr><td>Current (B)</td><td>${escapeHtml(currentSnap.label)} (${currentSnap.dateFormatted})</td></tr>
+      <tr><td>Comparison Scope</td><td><strong>${escapeHtml(scopeLabel)}</strong></td></tr>
       <tr><td>Pixels Changed</td><td>${currentDiffResult.diffPixels.toLocaleString()} / ${currentDiffResult.totalPixels.toLocaleString()}</td></tr>
     </table>
   </div>
 
-  <h2>Visual Regression Diff</h2>
+  <h2>Visual Regression Diff (${scopeLabel})</h2>
   <div class="grid">
     <div class="card">
       <h3>Baseline Snapshot (A)</h3>
-      <img src="${baselineSnap.screenshot}" alt="Baseline" />
+      <img src="${imgA}" alt="Baseline" />
     </div>
     <div class="card">
       <h3>Current Snapshot (B)</h3>
-      <img src="${currentSnap.screenshot}" alt="Current" />
+      <img src="${imgB}" alt="Current" />
     </div>
   </div>
 
