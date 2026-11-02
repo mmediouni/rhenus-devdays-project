@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UI Regression Detector</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M4.93 4.93l4.24 4.24"></path>
+            <path d="M14.83 14.83l4.24 4.24"></path>
+            <path d="M14.83 9.17l4.24-4.24"></path>
+            <path d="M4.93 19.07l4.24-4.24"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>UI Regression</h1>
+          <span class="brand-sub">Detector</span>
+        </div>
+      </div>
+      <button id="open-dashboard-top-btn" class="icon-btn" title="Open Full Dashboard">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="9" y1="3" x2="9" y2="21"></line>
+          <line x1="15" y1="9" x2="21" y2="9"></line>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Current Tab Details -->
+    <div class="current-page-card">
+      <div class="page-meta-row">
+        <span class="pulse-indicator"></span>
+        <span id="page-title" class="page-title truncate">Loading page...</span>
+      </div>
+      <span id="page-url" class="page-url truncate">https://...</span>
+    </div>
+
+    <!-- Snapshot Capture Form -->
+    <section class="capture-section">
+      <div class="input-group">
+        <label for="snapshot-label">Snapshot Label / Tag</label>
+        <input type="text" id="snapshot-label" placeholder="e.g. Baseline, After styling update, Fix #42..." maxlength="60" />
+      </div>
+
+      <button id="btn-capture" class="btn btn-primary btn-capture">
+        <span class="btn-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+        </span>
+        <span class="btn-text">Take Snapshot Now</span>
+      </button>
+
+      <div id="capture-status" class="status-msg hidden"></div>
+    </section>
+
+    <!-- Quick Compare Section (shown when >= 2 snapshots exist) -->
+    <section id="quick-compare-section" class="quick-compare-section hidden">
+      <div class="section-header">
+        <h2>Quick Regression Check</h2>
+        <span id="quick-diff-badge" class="badge">Comparing...</span>
+      </div>
+      <div class="quick-compare-body">
+        <div class="quick-compare-pair">
+          <div class="pair-card" id="card-baseline">
+            <span class="pair-role">Baseline</span>
+            <div class="thumb-wrap" id="thumb-baseline"></div>
+            <span class="pair-label truncate" id="label-baseline">--</span>
+          </div>
+          <div class="pair-vs">VS</div>
+          <div class="pair-card" id="card-current">
+            <span class="pair-role">Latest</span>
+            <div class="thumb-wrap" id="thumb-current"></div>
+            <span class="pair-label truncate" id="label-current">--</span>
+          </div>
+        </div>
+        <button id="btn-view-quick-diff" class="btn btn-secondary btn-sm w-full">
+          Compare in Dashboard &rarr;
+        </button>
+      </div>
+    </section>
+
+    <!-- History Section for this Page -->
+    <section class="history-section">
+      <div class="section-header">
+        <h2>Snapshots for this page</h2>
+        <span id="page-snapshot-count" class="badge count-badge">0</span>
+      </div>
+
+      <div id="history-list" class="history-list">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <div id="empty-history" class="empty-state hidden">
+        <p>No snapshots yet for this page.</p>
+        <span class="hint">Click "Take Snapshot Now" to record your baseline.</span>
+      </div>
+    </section>
+
+    <!-- Footer Actions -->
+    <footer class="popup-footer">
+      <button id="btn-open-dashboard" class="btn btn-outline w-full">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+        <span>Open Full Regression Dashboard</span>
+      </button>
+    </footer>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
+

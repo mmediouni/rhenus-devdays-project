@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acme Store - Product Checkout Testbed</title>
+  <style id="theme-styles">
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --subtext: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --border: #e2e8f0;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+      padding: 32px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+
+    h1 { font-size: 20px; font-weight: 700; }
+    .badge { background: #dbeafe; color: #1e40af; font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
+
+    .product-row {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .product-thumb {
+      width: 80px;
+      height: 80px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #60a5fa, #a855f7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 24px;
+    }
+
+    .product-info h3 { font-size: 16px; margin-bottom: 4px; }
+    .product-info p { font-size: 13px; color: var(--subtext); }
+
+    .price-box {
+      font-size: 24px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 24px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-buy {
+      flex: 1;
+      padding: 12px 20px;
+      background-color: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      font-size: 14px;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+
+    .btn-buy:hover {
+      background-color: var(--primary-hover);
+    }
+
+    /* Simulation Control Banner */
+    .sim-bar {
+      margin-top: 40px;
+      width: 100%;
+      max-width: 680px;
+      background: #0f172a;
+      color: #fff;
+      border-radius: 8px;
+      padding: 18px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .sim-bar h4 {
+      color: #38bdf8;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .sim-bar p {
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    .sim-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .btn-sim {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid #334155;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn-sim:hover {
+      background: #334155;
+      border-color: #38bdf8;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container" id="main-card">
+    <header>
+      <h1 id="store-title">Acme Electronics Store</h1>
+      <span class="badge" id="order-badge">In Stock</span>
+    </header>
+
+    <div class="product-row">
+      <div class="product-thumb" id="prod-thumb">🎧</div>
+      <div class="product-info">
+        <h3 id="product-name">Wireless Noise-Cancelling Headphones Pro</h3>
+        <p id="product-desc">Spatial audio, 40h battery life, active hybrid noise cancellation.</p>
+      </div>
+    </div>
+
+    <div class="price-box" id="price-tag">$299.99</div>
+
+    <div class="actions">
+      <button class="btn-buy" id="checkout-btn">Proceed to Checkout &rarr;</button>
+    </div>
+  </div>
+
+  <!-- Interactive Controls to simulate UI changes/regressions -->
+  <div class="sim-bar">
+    <h4>🧪 UI Regression Simulator Controls</h4>
+    <p>1. Take snapshot #1 with the extension (Baseline)<br>
+       2. Click any of the buttons below to introduce a visual/CSS/DOM change<br>
+       3. Take snapshot #2 with the extension &amp; inspect in the Dashboard!
+    </p>
+    <div class="sim-buttons">
+      <button class="btn-sim" onclick="changeButtonColor()">🎨 Change Button Color (CSS)</button>
+      <button class="btn-sim" onclick="shiftPadding()">📐 Shift Padding &amp; Size (Layout)</button>
+      <button class="btn-sim" onclick="changeCopyAndPrice()">✍️ Modify Price &amp; Copy (DOM)</button>
+      <button class="btn-sim" onclick="resetPage()">🔄 Reset to Baseline</button>
+    </div>
+  </div>
+
+  <script>
+    function changeButtonColor() {
+      const btn = document.getElementById('checkout-btn');
+      btn.style.backgroundColor = '#ec4899'; // change blue to pink
+      btn.textContent = 'Buy Now (Sprint 2)';
+    }
+
+    function shiftPadding() {
+      const card = document.getElementById('main-card');
+      card.style.padding = '54px';
+      card.style.borderRadius = '24px';
+      card.style.boxShadow = '0 12px 40px rgba(236, 72, 153, 0.2)';
+    }
+
+    function changeCopyAndPrice() {
+      document.getElementById('price-tag').textContent = '$349.99 (Special Edition)';
+      document.getElementById('order-badge').textContent = 'Limited Availability';
+      document.getElementById('order-badge').style.background = '#fef3c7';
+      document.getElementById('order-badge').style.color = '#92400e';
+    }
+
+    function resetPage() {
+      const btn = document.getElementById('checkout-btn');
+      btn.style.backgroundColor = '';
+      btn.textContent = 'Proceed to Checkout →';
+
+      const card = document.getElementById('main-card');
+      card.style.padding = '';
+      card.style.borderRadius = '';
+      card.style.boxShadow = '';
+
+      document.getElementById('price-tag').textContent = '$299.99';
+      const badge = document.getElementById('order-badge');
+      badge.textContent = 'In Stock';
+      badge.style.background = '';
+      badge.style.color = '';
+    }
+  </script>
+</body>
+</html>
+

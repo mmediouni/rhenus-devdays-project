@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UI Regression Detector - Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navbar -->
+    <header class="top-nav">
+      <div class="nav-left">
+        <div class="logo-box">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M4.93 4.93l4.24 4.24"></path>
+            <path d="M14.83 14.83l4.24 4.24"></path>
+            <path d="M14.83 9.17l4.24-4.24"></path>
+            <path d="M4.93 19.07l4.24-4.24"></path>
+          </svg>
+        </div>
+        <div class="nav-title">
+          <h1>UI Regression Detector</h1>
+          <span class="nav-badge">v1.0 &bull; Studio</span>
+        </div>
+      </div>
+
+      <div class="nav-metrics">
+        <div class="metric-pill">
+          <span class="metric-label">Pages</span>
+          <span id="metric-pages" class="metric-value">0</span>
+        </div>
+        <div class="metric-pill">
+          <span class="metric-label">Snapshots</span>
+          <span id="metric-snapshots" class="metric-value">0</span>
+        </div>
+        <div class="metric-pill highlight">
+          <span class="metric-label">Status</span>
+          <span id="metric-status" class="metric-value status-ready">Ready</span>
+        </div>
+      </div>
+
+      <div class="nav-right">
+        <button id="btn-export-report" class="btn btn-primary btn-sm" title="Download standalone HTML report">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Export HTML Report
+        </button>
+
+        <button id="btn-export-json" class="btn btn-secondary btn-sm" title="Export JSON Data Backup">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+          JSON Backup
+        </button>
+
+        <label class="btn btn-secondary btn-sm file-upload-btn" title="Import JSON snapshots">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          Import
+          <input type="file" id="input-import-json" accept=".json" style="display: none;">
+        </label>
+
+        <button id="btn-clear-all" class="btn btn-danger-outline btn-sm" title="Clear all stored snapshots">
+          Clear Data
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="workspace">
+      <!-- Sidebar: Pages & History -->
+      <aside class="sidebar">
+        <!-- Search and Filter -->
+        <div class="sidebar-filter-box">
+          <div class="search-input-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" id="search-input" placeholder="Search page or label..." />
+          </div>
+
+          <select id="domain-select" class="domain-dropdown">
+            <option value="ALL">All Domains</option>
+          </select>
+        </div>
+
+        <!-- Page List -->
+        <div class="page-list-section">
+          <div class="sidebar-heading">
+            <span>Tracked Pages</span>
+            <span id="page-list-count" class="badge">0</span>
+          </div>
+          <div id="page-list" class="page-list">
+            <!-- Dynamic pages -->
+          </div>
+        </div>
+
+        <!-- Snapshot Timeline for Selected Page -->
+        <div class="timeline-section">
+          <div class="sidebar-heading">
+            <span>Snapshot Timeline</span>
+            <span id="timeline-count" class="badge">0</span>
+          </div>
+          <div class="timeline-instructions">
+            <span>Select <strong>Baseline</strong> (<span class="text-baseline">A</span>) & <strong>Comparison</strong> (<span class="text-current">B</span>)</span>
+          </div>
+          <div id="timeline-list" class="timeline-list">
+            <!-- Dynamic snapshots -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Comparison Viewport -->
+      <main class="main-content">
+        <!-- Active Comparison Header Bar -->
+        <div class="comparison-bar">
+          <div class="comparison-selectors">
+            <!-- Baseline selector pill -->
+            <div class="selector-box baseline-box">
+              <div class="selector-tag">BASELINE (A)</div>
+              <select id="select-baseline" class="snapshot-dropdown"></select>
+            </div>
+
+            <div class="vs-badge">VS</div>
+
+            <!-- Current selector pill -->
+            <div class="selector-box current-box">
+              <div class="selector-tag">CURRENT (B)</div>
+              <select id="select-current" class="snapshot-dropdown"></select>
+            </div>
+          </div>
+
+          <!-- Quick Diff Summary Banner -->
+          <div id="diff-summary-card" class="diff-summary-card">
+            <div id="diff-status-icon" class="status-icon-circle">✓</div>
+            <div class="diff-summary-text">
+              <div class="diff-title-row">
+                <span id="diff-verdict-title" class="verdict-title">Identical</span>
+                <span id="diff-percent-badge" class="diff-percent-badge">0.00% Diff</span>
+              </div>
+              <span id="diff-stats-detail" class="diff-stats-detail">0 pixels altered</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <div class="tabs-nav-bar">
+          <div class="tab-buttons">
+            <button class="tab-btn active" data-tab="tab-visual">
+              <span class="tab-icon">🖼️</span> Visual Diff
+            </button>
+            <button class="tab-btn" data-tab="tab-dom">
+              <span class="tab-icon">💻</span> DOM &amp; Code Diff
+            </button>
+            <button class="tab-btn" data-tab="tab-css">
+              <span class="tab-icon">🎨</span> CSS &amp; Computed Styles
+            </button>
+            <button class="tab-btn" data-tab="tab-meta">
+              <span class="tab-icon">📋</span> Page Metadata
+            </button>
+          </div>
+
+          <!-- Tab-specific Toolbar -->
+          <div id="visual-mode-controls" class="tab-sub-controls">
+            <span class="sub-label">Mode:</span>
+            <div class="segmented-control">
+              <button class="segment-btn active" data-mode="side-by-side">Side-by-Side</button>
+              <button class="segment-btn" data-mode="slider">Slider Wipe</button>
+              <button class="segment-btn" data-mode="diff-mask">Diff Mask</button>
+              <button class="segment-btn" data-mode="onion">Onion Skin</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Contents -->
+        <div class="tab-contents">
+          <!-- 1. VISUAL DIFF TAB -->
+          <div id="tab-visual" class="tab-panel active">
+            <!-- Side-by-Side Mode -->
+            <div id="view-side-by-side" class="visual-view-container">
+              <div class="compare-pane">
+                <div class="pane-header">
+                  <span class="pane-title">Baseline (A)</span>
+                  <span id="header-baseline-time" class="pane-time">--</span>
+                </div>
+                <div class="pane-img-wrap" id="pane-img-baseline-wrap">
+                  <img id="img-baseline" src="" alt="Baseline Snapshot" />
+                </div>
+              </div>
+              <div class="compare-pane">
+                <div class="pane-header">
+                  <span class="pane-title">Current (B)</span>
+                  <span id="header-current-time" class="pane-time">--</span>
+                </div>
+                <div class="pane-img-wrap" id="pane-img-current-wrap">
+                  <img id="img-current" src="" alt="Current Snapshot" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Slider / Wipe Mode -->
+            <div id="view-slider" class="visual-view-container hidden">
+              <div class="slider-comparison-box" id="slider-box" style="--slider-pos: 50%;">
+                <img id="slider-img-current" class="slider-img" src="" alt="Current" />
+                <img id="slider-img-baseline" class="slider-img top-layer" src="" alt="Baseline" />
+                <div class="slider-divider-line"></div>
+                <div class="slider-handle" id="slider-handle">↔</div>
+                <span class="slider-label label-left">Baseline (A)</span>
+                <span class="slider-label label-right">Current (B)</span>
+              </div>
+            </div>
+
+            <!-- Diff Mask Heatmap Mode -->
+            <div id="view-diff-mask" class="visual-view-container hidden">
+              <div class="diff-mask-box">
+                <div class="mask-header">
+                  <span>Regression Heatmap (Pink highlights indicate changed visual regions)</span>
+                  <div class="mask-legend">
+                    <span class="legend-color-box"></span>
+                    <span>Modified Pixel</span>
+                  </div>
+                </div>
+                <div class="mask-img-wrap">
+                  <img id="img-diff-mask" src="" alt="Diff Mask Heatmap" />
+                </div>
+              </div>
+            </div>
+
+            <!-- Onion Skin / Alpha Blend Mode -->
+            <div id="view-onion" class="visual-view-container hidden">
+              <div class="onion-controls">
+                <span>Baseline (A)</span>
+                <input type="range" id="onion-slider" min="0" max="100" value="50" />
+                <span>Current (B)</span>
+                <span id="onion-val" class="onion-val-text">50% Blend</span>
+              </div>
+              <div class="onion-view-box">
+                <img id="onion-img-baseline" class="onion-layer base" src="" alt="Baseline" />
+                <img id="onion-img-current" class="onion-layer current" src="" alt="Current" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. DOM & CODE DIFF TAB -->
+          <div id="tab-dom" class="tab-panel">
+            <div class="code-diff-toolbar">
+              <div class="diff-stats-pills">
+                <span class="stat-pill pill-add"><span id="dom-add-count">+0</span> added</span>
+                <span class="stat-pill pill-del"><span id="dom-del-count">-0</span> removed</span>
+                <span class="stat-pill pill-eq"><span id="dom-eq-count">0</span> unchanged</span>
+              </div>
+              <div class="diff-view-toggles">
+                <button id="btn-diff-unified" class="btn btn-sm btn-secondary active">Unified Diff</button>
+                <button id="btn-diff-split" class="btn btn-sm btn-secondary">Split Diff</button>
+              </div>
+            </div>
+            <!-- Structural Nodes comparison -->
+            <div class="dom-summary-cards" id="dom-summary-cards">
+              <!-- Rendered via JS -->
+            </div>
+            <!-- Code content -->
+            <div class="code-diff-container" id="code-diff-output">
+              <div class="diff-loading">Select two snapshots to compute DOM diff...</div>
+            </div>
+          </div>
+
+          <!-- 3. CSS & STYLES TAB -->
+          <div id="tab-css" class="tab-panel">
+            <div class="css-tab-container">
+              <div class="css-section">
+                <h3>Computed Styles Landmarks</h3>
+                <p class="section-desc">Key layout, typography, and color properties on landmark elements (body, buttons, navigation, headings):</p>
+                <div id="css-landmarks-table" class="landmarks-table-wrap">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+
+              <div class="css-section">
+                <h3>Embedded Stylesheets Diff</h3>
+                <div id="css-rules-diff-output" class="code-diff-container">
+                  <!-- Stylesheet diff -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. METADATA TAB -->
+          <div id="tab-meta" class="tab-panel">
+            <div class="meta-tab-container" id="meta-tab-container">
+              <!-- Dynamic comparison table -->
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
