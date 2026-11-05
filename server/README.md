@@ -130,6 +130,16 @@ The API tests use the in-memory database and storage, so no Postgres is needed.
 - Screenshots may contain sensitive data. Use a private bucket, and prefer self-hosting for internal applications.
 - `SUPABASE_SERVICE_KEY` must only exist on the server.
 
+## Chrome extension sync
+
+Open the extension popup, expand **Hub sync**, then enter the hub URL and an API key and press **Test connection**, then **Save**.
+
+- The extension stays local-first. Snapshots are always saved in the browser; the upload is an extra step after each capture.
+- The full-page screenshot is uploaded (viewport image if no full page was captured).
+- **Label** sent to the hub is either the page domain (default, keeps each system's history separate) or a fixed text you choose (environment, branch, build...).
+- If the hub is unreachable (or answers 5xx/429), the snapshot is queued and retried on the next capture, when you press Save, and when the browser starts. Permanent errors (bad key, image too large) are shown and not retried.
+- No extra browser permission is needed: the hub answers cross-origin requests and the key is sent as a bearer token. Set `URD_CORS_ORIGIN` if you want to restrict origins.
+
 ## Not built yet
 
-Extension sync (upload queue and pull), hub-served web dashboard, Cypress command, direct-to-storage uploads, key management endpoints, text/HTML diff in the hub.
+Pulling the shared timeline back into the extension, hub-served web dashboard, Cypress command, direct-to-storage uploads, key management endpoints, text/HTML diff in the hub.

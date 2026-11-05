@@ -5,6 +5,7 @@
 ### Added
 - **Hub server** (`server/`): portable API that receives screenshots from the extension, Playwright, Cypress or CI, compares them with the previous snapshot and the approved baseline, and keeps a timeline per page. Runs on Vercel, plain Node or Docker; PostgreSQL (Supabase or any) and local or Supabase storage are swappable through environment variables.
 - Dependency-free client for Playwright / CI (`server/clients/urd-client.js`).
+- **Optional hub sync in the extension**: popup section to set the hub URL, API key and label rule; snapshots are uploaded after capture, the hub verdict is shown, and failed uploads are queued and retried. The extension still works fully offline.
 
 ## 1.4.0 - 2026-11-05
 

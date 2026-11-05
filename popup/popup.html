@@ -71,6 +71,42 @@
       <div id="capture-status" class="status-msg hidden"></div>
     </section>
 
+    <!-- Optional Hub sync -->
+    <details id="hub-section" class="hub-section">
+      <summary>
+        <span>Hub sync</span>
+        <span id="hub-state" class="hub-state">off</span>
+      </summary>
+      <div class="hub-body">
+        <label class="checkbox-label">
+          <input type="checkbox" id="hub-enabled" />
+          <span>Upload snapshots to the hub</span>
+        </label>
+        <div class="input-group">
+          <label for="hub-url">Hub URL</label>
+          <input type="url" id="hub-url" placeholder="https://hub.example.com" autocomplete="off" />
+        </div>
+        <div class="input-group">
+          <label for="hub-key">API key</label>
+          <input type="password" id="hub-key" placeholder="urd_..." autocomplete="off" />
+        </div>
+        <div class="input-group">
+          <label for="hub-label-mode">Label sent to the hub</label>
+          <select id="hub-label-mode">
+            <option value="domain">Page domain (separate history per system)</option>
+            <option value="custom">Fixed text (environment, branch, build...)</option>
+          </select>
+          <input type="text" id="hub-label" placeholder="e.g. staging, main, build-42" maxlength="100" class="hidden" />
+        </div>
+        <div class="hub-actions">
+          <button id="btn-hub-test" class="btn btn-secondary btn-sm" type="button">Test connection</button>
+          <button id="btn-hub-save" class="btn btn-primary btn-sm" type="button">Save</button>
+        </div>
+        <div id="hub-status" class="status-msg hidden"></div>
+        <p class="hint">The local history keeps working without a hub. If the hub is unreachable, uploads are queued and retried.</p>
+      </div>
+    </details>
+
     <!-- Quick Compare Section (shown when >= 2 snapshots exist) -->
     <section id="quick-compare-section" class="quick-compare-section hidden">
       <div class="section-header">

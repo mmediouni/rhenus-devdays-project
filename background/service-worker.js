@@ -4,6 +4,7 @@
  */
 
 import { saveSnapshot, countSnapshotsForUrl, pruneSnapshotsForUrl } from '../utils/db.js';
+import { syncSnapshotToHub, flushHubQueue } from '../utils/hub.js';
 
 const MAX_SNAPSHOTS_PER_PAGE = 30;
 const MIN_CAPTURE_INTERVAL_MS = 600; // captureVisibleTab is rate limited (~2/s)
@@ -13,7 +14,7 @@ const RESTRICTED_PREFIXES = ['chrome://', 'edge://', 'about:', 'chrome-extension
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'TAKE_SNAPSHOT') {
     handleTakeSnapshot(message.payload)
-      .then(result => sendResponse({ success: true, snapshot: { id: result.id, label: result.label } }))
+      .then(result => sendResponse({ success: true, snapshot: { id: result.id, label: result.label }, hub: result.hub }))
       .catch(err => {
         console.error('[Service Worker] Error taking snapshot:', err);
         sendResponse({ success: false, error: err.message });
@@ -156,8 +157,24 @@ async function handleTakeSnapshot(payload = {}) {
   chrome.action.setBadgeText({ tabId: tabId_, text: String(count) });
   chrome.action.setBadgeBackgroundColor({ tabId: tabId_, color: '#06b6d4' });
 
-  return snapshot;
+  // 8. Optional hub sync. The local snapshot is already safe, so a hub problem
+  //    never fails the capture; it is reported and queued for retry instead.
+  let hub = { status: 'off' };
+  try {
+    hub = await syncSnapshotToHub(snapshot);
+    if (hub.status === 'synced') await flushHubQueue();
+  } catch (e) {
+    console.warn('[Service Worker] Hub sync error:', e);
+    hub = { status: 'failed', error: e.message };
+  }
+
+  return { id: snapshot.id, label: snapshot.label, hub };
 }
+
+// Retry queued uploads when the browser starts.
+chrome.runtime.onStartup.addListener(() => {
+  flushHubQueue().catch(e => console.warn('[Service Worker] Hub queue flush failed:', e));
+});
 
 /**
  * Open or focus the Dashboard tab. The tab id is remembered in session storage,

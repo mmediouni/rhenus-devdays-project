@@ -7,6 +7,7 @@ import { loadGroups, envLabel, pickDefaultPair } from '../utils/environments.js'
 import { compareImages } from '../utils/visual-diff.js';
 import { safeImageSrc, escapeHtml } from '../utils/common.js';
 import { confirmDialog } from '../utils/ui.js';
+import { loadHubSettings, saveHubSettings, testHubConnection, flushHubQueue, getPendingCount, isHubConfigured } from '../utils/hub.js';
 
 let currentTab = null;
 let pageSnapshots = [];
@@ -48,8 +49,101 @@ async function initPopup() {
     openDashboard();
   });
 
+  setupHubSettings();
+
   // Load snapshots for current page
   await refreshPageHistory();
+}
+
+// ---------------------------------------------------------------------------
+// Hub sync settings
+// ---------------------------------------------------------------------------
+
+function hubFormValues() {
+  return {
+    enabled: document.getElementById('hub-enabled').checked,
+    url: document.getElementById('hub-url').value,
+    apiKey: document.getElementById('hub-key').value,
+    labelMode: document.getElementById('hub-label-mode').value,
+    label: document.getElementById('hub-label').value
+  };
+}
+
+function showHubStatus(text, type) {
+  const el = document.getElementById('hub-status');
+  el.textContent = text;
+  el.className = `status-msg ${type}`;
+}
+
+async function refreshHubBadge() {
+  const badge = document.getElementById('hub-state');
+  const settings = await loadHubSettings();
+  const pending = await getPendingCount();
+  if (!isHubConfigured(settings)) {
+    badge.textContent = 'off';
+    badge.className = 'hub-state';
+  } else if (pending > 0) {
+    badge.textContent = `${pending} pending`;
+    badge.className = 'hub-state pending';
+  } else {
+    badge.textContent = 'on';
+    badge.className = 'hub-state on';
+  }
+}
+
+async function setupHubSettings() {
+  const modeSel = document.getElementById('hub-label-mode');
+  const labelInput = document.getElementById('hub-label');
+  const syncLabelVisibility = () => labelInput.classList.toggle('hidden', modeSel.value !== 'custom');
+
+  const s = await loadHubSettings();
+  document.getElementById('hub-enabled').checked = s.enabled;
+  document.getElementById('hub-url').value = s.url;
+  document.getElementById('hub-key').value = s.apiKey;
+  modeSel.value = s.labelMode;
+  labelInput.value = s.labelMode === 'custom' ? s.label : '';
+  syncLabelVisibility();
+  modeSel.addEventListener('change', syncLabelVisibility);
+  await refreshHubBadge();
+
+  document.getElementById('btn-hub-test').addEventListener('click', async () => {
+    showHubStatus('Testing connection...', 'loading');
+    try {
+      const r = await testHubConnection(hubFormValues());
+      showHubStatus(`Connected. Key "${r.key}" (${(r.scopes || []).join(', ')})`, 'success');
+    } catch (err) {
+      showHubStatus(err.message, 'error');
+    }
+  });
+
+  document.getElementById('btn-hub-save').addEventListener('click', async () => {
+    try {
+      const saved = await saveHubSettings(hubFormValues());
+      if (document.getElementById('hub-url').value.trim() && !saved.url) {
+        showHubStatus('Hub URL must start with http:// or https://', 'error');
+        return;
+      }
+      document.getElementById('hub-url').value = saved.url;
+      showHubStatus(saved.enabled ? 'Saved. New snapshots will be uploaded.' : 'Saved. Sync is off.', 'success');
+      if (isHubConfigured(saved)) {
+        const r = await flushHubQueue(saved);
+        if (r.synced) showHubStatus(`Saved. Uploaded ${r.synced} queued snapshot(s).`, 'success');
+      }
+      await refreshHubBadge();
+    } catch (err) {
+      showHubStatus(err.message, 'error');
+    }
+  });
+}
+
+function describeHub(hub) {
+  if (!hub || hub.status === 'off') return '';
+  if (hub.status === 'synced') {
+    const pct = hub.diffPercentage != null ? ` (${hub.diffPercentage}% changed)` : '';
+    return hub.firstSnapshot ? ' Hub: first snapshot, saved as baseline.' : ` Hub: ${hub.verdict}${pct}.`;
+  }
+  if (hub.status === 'queued') return ' Hub unreachable: queued for retry.';
+  return ` Hub upload failed: ${hub.error || 'unknown error'}.`;
 }
 
 async function refreshPageHistory() {
@@ -92,14 +186,17 @@ async function handleCapture() {
       throw new Error(response ? response.error : 'Failed to capture snapshot.');
     }
 
-    showStatus('Snapshot captured successfully!', 'success');
+    const hubNote = describeHub(response.hub);
+    const hubBad = response.hub && (response.hub.status === 'failed' || response.hub.status === 'queued');
+    showStatus('Snapshot captured successfully!' + hubNote, hubBad ? 'error' : 'success');
     labelInput.value = '';
 
     await refreshPageHistory();
+    await refreshHubBadge();
 
     setTimeout(() => {
       hideStatus();
-    }, 2500);
+    }, hubNote ? 6000 : 2500);
   } catch (err) {
     console.error('Capture error:', err);
     showStatus(err.message, 'error');

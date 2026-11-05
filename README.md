@@ -240,8 +240,9 @@ npm run lint
 
 ## 🔒 Privacy & Security
 
-- **No Remote Telemetry**: The extension does not communicate with external servers.
-- **Local Storage Only**: All captured data resides strictly in your browser's local IndexedDB.
+- **No Remote Telemetry**: By default the extension does not communicate with any server.
+- **Local Storage by Default**: All captured data resides in your browser's local IndexedDB.
+- **Optional Hub Sync**: only if you enable *Hub sync* in the popup and enter a hub URL and API key, the full-page screenshot, page URL, title and viewport size of each new snapshot are uploaded to that hub (see [server/README.md](server/README.md)). HTML and CSS data are not uploaded. Use a hub you control for internal applications.
 - **Permission Scoping**: Uses `activeTab` and `scripting`; the content script is injected on demand when you click *Take Snapshot*, never automatically on every page. No `tabs` or host permissions.
 - **Redaction**: password / hidden input values and CSRF-token meta tags are removed from stored HTML. Snapshots still contain the rest of the page (including any personal data visible on it), so treat exported JSON and HTML reports as sensitive and avoid snapshotting pages with secrets you can't share.
 - **Safe import**: imported JSON is validated; only raster data-URL images and http(s)/file URLs are accepted.
