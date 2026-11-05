@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1 - 2026-11-05
+
+### Changed
+- Onion Skin: preview now uses the full width; the blend controls are a compact bar under the preview instead of a wide left column.
+
 ## 1.3.0 - 2026-11-05
 
 ### Added

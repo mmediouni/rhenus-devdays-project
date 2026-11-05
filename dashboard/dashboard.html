@@ -253,15 +253,15 @@
 
             <!-- Onion Skin / Alpha Blend Mode -->
             <div id="view-onion" class="visual-view-container hidden">
-              <div class="onion-controls">
-                <span>Baseline (A)</span>
-                <input type="range" id="onion-slider" min="0" max="100" value="50" />
-                <span>Current (B)</span>
-                <span id="onion-val" class="onion-val-text">50% Blend</span>
-              </div>
               <div class="onion-view-box">
                 <img id="onion-img-baseline" class="onion-layer base" src="" alt="Baseline" />
                 <img id="onion-img-current" class="onion-layer current" src="" alt="Current" />
+              </div>
+              <div class="onion-controls">
+                <span class="onion-end">A</span>
+                <input type="range" id="onion-slider" min="0" max="100" value="50" aria-label="Blend between Baseline (A) and Current (B)" />
+                <span class="onion-end">B</span>
+                <span id="onion-val" class="onion-val-text">50% Blend</span>
               </div>
             </div>
           </div>
