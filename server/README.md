@@ -46,22 +46,48 @@ npm run create-key -- my-project ci
 npm start
 ```
 
-### Staging on Vercel + Supabase
+### Staging on Vercel + Supabase (step by step)
 
-1. Supabase: create a project and a **private** Storage bucket named `snapshots`.
-2. Run `npm run migrate` once with the Supabase connection string as `DATABASE_URL`.
-3. Vercel: import the repo, set **Root Directory** to `server`, and add the variables below.
-4. Create a key with `npm run create-key` (using the same `DATABASE_URL`).
+Use your own accounts. Nothing here is tied to a specific account, and every value is an environment variable.
+
+**1. Supabase (database + image bucket)**
+1. Create a project. Note the database password.
+2. *Storage* > *New bucket* > name `snapshots`, keep it **private**.
+3. *Project Settings* > *Database* > *Connection string*: copy the **Transaction pooler** string (port 6543, recommended for serverless) and put your password in it. This is `DATABASE_URL`.
+4. *Project Settings* > *API*: copy the project URL and the **service_role** key (a secret: server only, never in the extension or the browser).
+
+**2. Create the tables and a key** (once, from your computer, in `server/`)
+```bash
+export DATABASE_URL="postgresql://postgres.xxxx:PASSWORD@aws-0-xx.pooler.supabase.com:6543/postgres"
+npm install
+npm run migrate                       # creates the tables
+npm run create-key -- my-project laptop   # prints the API key once: copy it
+```
+
+**3. Deploy on Vercel**
+1. *Add New* > *Project* > import this repository and pick the branch to deploy.
+2. Set **Root Directory** to `server`. Framework preset: **Other**. Leave build and output settings empty (there is no build step).
+3. Add the environment variables below, then **Deploy**.
+4. Open `https://<your-app>.vercel.app/v1/health`. It must answer `{"ok":true,"db":"postgres","storage":"supabase",...}`.
+5. Open `https://<your-app>.vercel.app/`, paste the API key, and you see the dashboard.
 
 | Variable | Value |
 |----------|-------|
-| `DATABASE_URL` | Supabase Postgres connection string |
+| `DATABASE_URL` | the Supabase pooler connection string |
 | `URD_STORAGE` | `supabase` |
 | `SUPABASE_URL` | `https://<project>.supabase.co` |
-| `SUPABASE_SERVICE_KEY` | service role key (server only, never in the extension) |
+| `SUPABASE_SERVICE_KEY` | the service_role key |
 | `SUPABASE_BUCKET` | `snapshots` |
 
-Vercel functions limit the request body to about 4.5 MB, so very large full-page screenshots can be rejected there. A direct-to-storage upload is the planned fix; a self-hosted server has no such limit (`URD_MAX_BODY_BYTES`).
+The server refuses to start on Vercel with the in-memory database or local disk storage (they would silently lose data), and says what is missing.
+
+**4. Point the clients at it**
+- Extension popup > *Hub sync*: URL `https://<your-app>.vercel.app`, your API key.
+- Playwright / CI: `URD_URL=https://<your-app>.vercel.app` and `URD_KEY=<key>`.
+
+**Limits to know:** Vercel functions limit the request body to about 4.5 MB, so very large full-page screenshots can be rejected there (the extension shows "image too large for this hub"). A direct-to-storage upload is the planned fix; a self-hosted server has no such limit (`URD_MAX_BODY_BYTES`). Check the function timeout of your Vercel plan for very large images.
+
+**Moving to your own server later:** deploy the Docker image (below) with a PostgreSQL, run `npm run migrate` there, and either keep using the Supabase bucket (same variables) or set `URD_STORAGE=local`. Existing data is not moved automatically; export it from Postgres and copy the bucket files if you need the history.
 
 ### Internal server / Docker
 
@@ -69,6 +95,21 @@ Vercel functions limit the request body to about 4.5 MB, so very large full-page
 docker build -t urd-hub server
 docker run -p 8787:8787 -v urd-data:/data \
   -e DATABASE_URL=postgres://... -e URD_PG_SSL=disable urd-hub
+```
+
+## Web dashboard
+
+The hub serves a dashboard at `/` (the `public/` folder, no build step). Paste an API key to sign in; the key stays in your browser's local storage and is sent only to this hub.
+
+- **Left:** every page and label with its latest verdict, with a filter.
+- **Timeline:** each snapshot with thumbnail, verdict, % changed, source, URL, note and a **baseline** marker.
+- **Compare:** set any two snapshots as **A** and **B** (they may come from different labels, for example two systems) and view them side by side, as a difference image or with a blend slider.
+- **Approve** makes a snapshot the new baseline; **Note** records what changed.
+
+Locally without a database you can try it with a demo key:
+
+```bash
+URD_DEV_KEY=urd_demo_key npm start      # http://localhost:8787, in-memory, lost on restart
 ```
 
 ## API
@@ -142,4 +183,4 @@ Open the extension popup, expand **Hub sync**, then enter the hub URL and an API
 
 ## Not built yet
 
-Pulling the shared timeline back into the extension, hub-served web dashboard, Cypress command, direct-to-storage uploads, key management endpoints, text/HTML diff in the hub.
+Pulling the shared timeline back into the extension, Cypress command, direct-to-storage uploads, key management endpoints, text/HTML diff in the hub.

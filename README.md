@@ -182,7 +182,9 @@ A key belongs to one project and can have `read` and `write` rights.
 **4. Take snapshots as usual.** After each capture the popup also shows the hub's answer, for example `Hub: PASS`, `Hub: REGRESSION (3.1% changed)` or `first snapshot, saved as baseline`.
 *How the hub decides:* the first snapshot of a page becomes its baseline automatically. Every later one is compared with the previous snapshot and with the approved baseline.
 
-**5. If the hub is down,** nothing is lost. The snapshot stays in your browser, is queued, and is uploaded on the next capture, when you press Save, or when the browser starts.
+**5. See the shared history.** Open the hub URL in a browser and sign in with the API key: the dashboard shows every page, its timeline and lets you compare any two snapshots.
+
+**6. If the hub is down,** nothing is lost. The snapshot stays in your browser, is queued, and is uploaded on the next capture, when you press Save, or when the browser starts.
 
 ---
 
