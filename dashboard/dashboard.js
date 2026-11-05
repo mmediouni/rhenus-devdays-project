@@ -742,6 +742,18 @@ async function runComparison() {
   renderMetadataComparison();
 }
 
+/** Neutral state of the summary card when there is nothing to compare yet. */
+function showDiffCardState(title, detail, status = 'pass') {
+  const card = document.getElementById('diff-summary-card');
+  if (!card) return;
+  card.classList.remove('status-pass', 'status-warning', 'status-regression');
+  card.classList.add(`status-${status}`);
+  document.getElementById('diff-verdict-title').textContent = title;
+  document.getElementById('diff-percent-badge').textContent = '--';
+  document.getElementById('diff-stats-detail').textContent = detail;
+  document.getElementById('diff-status-icon').textContent = '…';
+}
+
 function renderVisualComparison(diff, imgA, imgB, scopeLabel = 'Viewport') {
   const card = document.getElementById('diff-summary-card');
   const verdictEl = document.getElementById('diff-verdict-title');
