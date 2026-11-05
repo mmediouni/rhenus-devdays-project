@@ -20,7 +20,7 @@
 ## 1.3.0 - 2026-11-05
 
 ### Added
-- **Environment groups**: treat several domains (e.g. `rhex-test.*` / `rhex-qaint.*`) as one app so the same page can be compared across environments. Auto-suggested groups, environment badges, "default compare" mode (other environment vs previous snapshot), host masking in HTML diffs, cross-environment history in the popup.
+- **Environment groups**: treat several domains (e.g. `shop-test.*` / `shop-qa.*`) as one app so the same page can be compared across environments. Auto-suggested groups, environment badges, "default compare" mode (other environment vs previous snapshot), host masking in HTML diffs, cross-environment history in the popup.
 
 ## 1.2.0 - 2026-11-04
 

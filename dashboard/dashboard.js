@@ -217,7 +217,7 @@ function defaultBaselineFor(snaps) {
   return pickDefaultPair(snaps, prefs.get('compareMode', 'auto')).baseline;
 }
 
-/** Short environment label of a snapshot's domain, e.g. "test" / "qaint" */
+/** Short environment label of a snapshot's domain, e.g. "test" / "qa" */
 function envOf(snap) {
   return envLabel(snap.domain, envGroups);
 }
@@ -603,7 +603,7 @@ function setupEnvironmentControls() {
   wrap.id = 'urd-env-controls';
   wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:12px;';
   wrap.innerHTML = `
-    <button id="urd-env-btn" type="button" class="segment-btn" title="Treat several domains (e.g. test / qaint) as the same app">🌐 Environments…</button>
+    <button id="urd-env-btn" type="button" class="segment-btn" title="Treat several domains (e.g. test / qa) as the same app">🌐 Environments…</button>
     <label title="Which snapshot a page is compared against by default">
       Default compare:
       <select id="urd-compare-mode" style="width:100%">

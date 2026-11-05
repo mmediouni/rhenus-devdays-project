@@ -1,6 +1,6 @@
 /**
  * Environment groups dialog: define which domains are the same app
- * (e.g. rhex-test.* and rhex-qaint.*) so their pages can be compared.
+ * (e.g. shop-test.* and shop-qa.*) so their pages can be compared.
  */
 
 import { openModal, toast } from '../utils/ui.js';
@@ -48,7 +48,7 @@ export function openEnvironmentsDialog({ domains, groups, onChange }) {
         el('h3', { text: 'Environment groups', style: 'margin:0 0 6px;font-size:16px;' }),
         el('p', {
           text: 'Domains in the same group are treated as one application: pages with the same path are merged, ' +
-            'so you can compare e.g. TEST against QAINT. Existing snapshots are merged automatically.',
+            'so you can compare e.g. TEST against QA. Existing snapshots are merged automatically.',
           style: 'margin:0 0 14px;opacity:.8;'
         })
       );
@@ -101,7 +101,7 @@ export function openEnvironmentsDialog({ domains, groups, onChange }) {
 
       // Manual creation
       root.append(el('div', { text: 'Create a group manually', style: 'font-weight:700;margin:12px 0 6px;' }));
-      const nameInput = el('input', { placeholder: 'Group name (e.g. rhex)', style: INPUT + 'margin-bottom:8px;' });
+      const nameInput = el('input', { placeholder: 'Group name (e.g. shop)', style: INPUT + 'margin-bottom:8px;' });
       const checks = el('div', { style: 'display:flex;flex-direction:column;gap:4px;max-height:160px;overflow:auto;margin-bottom:8px;' });
       const boxes = [];
       domains.forEach(d => {

@@ -137,7 +137,7 @@ This answers "what changed visually" and "which code change caused it".
 Teams often run the same app on several hosts, for example a test system and a QA system. Define them as one **environment group** and they are treated as one application.
 
 1. In the dashboard sidebar press **🌐 Environments…**.
-2. Accept a **suggested group** (hosts that differ only by a name like `test` / `qaint` are suggested automatically), or tick the domains yourself and create a group with a name.
+2. Accept a **suggested group** (hosts that differ only by a name like `test` / `qa` are suggested automatically), or tick the domains yourself and create a group with a name.
 3. Take snapshots of the same page on each system. Pages with the same path and query are merged into one entry, with a small badge showing the environment on every snapshot.
 4. In the sidebar, set **Default compare**:
    - *Other environment*: compares the newest snapshot with the newest one from a different environment (system against system).

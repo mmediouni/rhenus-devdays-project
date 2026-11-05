@@ -1,7 +1,7 @@
 /**
  * UI Regression Detector - Environment groups
  *
- * Lets several domains (e.g. rhex-test.* and rhex-qaint.*) be treated as the
+ * Lets several domains (e.g. shop-test.* and shop-qa.*) be treated as the
  * same application, so the same page on different environments can be compared.
  * Grouping is applied when snapshots are READ, so it works retroactively and
  * nothing stored in IndexedDB is rewritten.
@@ -80,7 +80,7 @@ export function siblingUrls(url, groups = []) {
 }
 
 /**
- * Short environment label for a host, e.g. rhex-test.appdev... -> "test".
+ * Short environment label for a host, e.g. shop-test.dev.example.com -> "test".
  * Within a group, the first-label tokens shared by every domain are stripped.
  */
 export function envLabel(host, groups = []) {
@@ -108,7 +108,7 @@ export function envLabel(host, groups = []) {
 /**
  * Suggest groups from detected domains: hosts whose first label shares a prefix
  * before the last "-" and whose remaining labels are identical
- * (rhex-test.appdev.x.zz + rhex-qaint.appdev.x.zz -> "rhex").
+ * (shop-test.dev.example.com + shop-qa.dev.example.com -> "shop").
  */
 export function suggestGroups(domains, existingGroups = []) {
   const buckets = new Map();
