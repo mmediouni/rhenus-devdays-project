@@ -19,8 +19,14 @@ import {
   compareDomStats,
   normalizeHtmlForDiff
 } from '../utils/text-diff.js';
-import { escapeHtml, normalizeUrl as normalizeUrlKey, safeImageSrc, safeHttpUrl } from '../utils/common.js';
+import { escapeHtml, safeImageSrc, safeHttpUrl } from '../utils/common.js';
 import { toast, confirmDialog } from '../utils/ui.js';
+import { loadGroups, groupKeyFor, findGroup, envLabel, pickDefaultPair } from '../utils/environments.js';
+import { openEnvironmentsDialog } from './environments-ui.js';
+
+// Environment groups (domains treated as the same app), loaded from chrome.storage
+let envGroups = [];
+let pendingReselectUrl = null;
 
 // Per-viewer preferences (localStorage may be unavailable -> degrade gracefully)
 const prefs = {
@@ -109,6 +115,9 @@ function setupEventListeners() {
   // Tolerance slider + ignore regions
   setupVisualExtras();
 
+  // Environment groups + default compare mode
+  setupEnvironmentControls();
+
   // Export HTML Report
   document.getElementById('btn-export-report').addEventListener('click', exportHtmlReport);
 
@@ -124,15 +133,19 @@ function setupEventListeners() {
  * Reads URL params (?url=...&baseline=...&current=...) or loads default
  */
 async function loadDataFromUrlParamsOrStorage() {
+  envGroups = await loadGroups();
   allSnapshots = await getAllSnapshots();
   rebuildPageGroups();
   populateDomainDropdown();
   updateTopMetrics();
 
   const urlParams = new URLSearchParams(window.location.search);
-  const targetUrl = urlParams.get('url');
-  const targetBaseline = urlParams.get('baseline');
-  const targetCurrent = urlParams.get('current');
+  // After editing environment groups, stay on the page being viewed (its key may have changed)
+  const reselectUrl = pendingReselectUrl;
+  pendingReselectUrl = null;
+  const targetUrl = reselectUrl || urlParams.get('url');
+  const targetBaseline = reselectUrl ? null : urlParams.get('baseline');
+  const targetCurrent = reselectUrl ? null : urlParams.get('current');
 
   if (groupedPages.size === 0) {
     showEmptyWorkspace();
@@ -141,8 +154,8 @@ async function loadDataFromUrlParamsOrStorage() {
   hideEmptyWorkspace();
 
   // Determine initial page
-  if (targetUrl && groupedPages.has(normalizeUrlKey(targetUrl))) {
-    selectedPageKey = normalizeUrlKey(targetUrl);
+  if (targetUrl && groupedPages.has(groupKeyFor(targetUrl, envGroups))) {
+    selectedPageKey = groupKeyFor(targetUrl, envGroups);
   } else {
     // Select first available page group
     selectedPageKey = groupedPages.keys().next().value;
@@ -174,7 +187,7 @@ async function loadDataFromUrlParamsOrStorage() {
 function rebuildPageGroups() {
   groupedPages.clear();
   for (const s of allSnapshots) {
-    const key = normalizeUrlKey(s.url);
+    const key = groupKeyFor(s.url, envGroups);
     if (!groupedPages.has(key)) {
       groupedPages.set(key, []);
     }
@@ -197,7 +210,30 @@ function getGoldenSnapshot(pageKey) {
 function defaultBaselineFor(snaps) {
   const golden = getGoldenSnapshot(selectedPageKey);
   if (golden && snaps[0] && golden.id !== snaps[0].id) return golden;
-  return snaps.length > 1 ? snaps[1] : snaps[0] || null;
+  // 'auto' prefers the newest snapshot from another environment, 'previous' the one before
+  return pickDefaultPair(snaps, prefs.get('compareMode', 'auto')).baseline;
+}
+
+/** Short environment label of a snapshot's domain, e.g. "test" / "qaint" */
+function envOf(snap) {
+  return envLabel(snap.domain, envGroups);
+}
+
+/** Environment names present for a page, in first-seen order */
+function envsOfPage(snaps) {
+  return [...new Set(snaps.map(envOf))];
+}
+
+/** Hosts to mask in HTML diffs when comparing two environments of the same app */
+function hostsToMask() {
+  const hosts = new Set();
+  for (const snap of [baselineSnap, currentSnap]) {
+    if (!snap) continue;
+    const group = findGroup(snap.domain, envGroups);
+    (group ? group.domains : [snap.domain]).forEach(h => hosts.add(h));
+  }
+  // Longest first so a host that contains another is replaced entirely
+  return [...hosts].sort((a, b) => b.length - a.length);
 }
 
 function getIgnoreRegions() {
@@ -239,7 +275,7 @@ function renderPageList(query = '', domainFilter = 'ALL') {
   let count = 0;
   for (const [key, snaps] of groupedPages.entries()) {
     const sample = snaps[0];
-    if (domainFilter !== 'ALL' && sample.domain !== domainFilter) continue;
+    if (domainFilter !== 'ALL' && !snaps.some(s => s.domain === domainFilter)) continue;
 
     if (query) {
       const matchTitle = sample.title && sample.title.toLowerCase().includes(query);
@@ -249,11 +285,13 @@ function renderPageList(query = '', domainFilter = 'ALL') {
     }
 
     count++;
+    const envs = envsOfPage(snaps);
     const item = document.createElement('div');
     item.className = `page-item ${key === selectedPageKey ? 'active' : ''}`;
     item.innerHTML = `
       <span class="page-item-title truncate">${escapeHtml(sample.title || sample.domain)}</span>
       <span class="page-item-url truncate">${escapeHtml(sample.url)}</span>
+      ${envs.length > 1 ? `<span class="page-item-url truncate">🌐 ${escapeHtml(envs.join(' ↔ '))}</span>` : ''}
       <span class="badge" style="align-self: flex-start; margin-top: 2px;">${snaps.length} snap${snaps.length > 1 ? 's' : ''}</span>
     `;
 
@@ -309,6 +347,7 @@ function renderTimelineForSelectedPage() {
       <div class="card-body">
         <img alt="Thumb" class="card-thumb" />
         <div class="card-meta">
+          <span title="${escapeHtml(snap.domain)}">🌐 ${escapeHtml(envOf(snap))}</span>
           <span>📅 ${snap.dateFormatted}</span>
           <span>📐 ${snap.viewport?.width || '--'}x${snap.viewport?.height || '--'}</span>
           <span>🏷️ ${snap.dom?.stats?.elementsTotal || '--'} elements</span>
@@ -384,12 +423,12 @@ function updateComparisonDropdowns() {
   pageSnaps.forEach(s => {
     const optBase = document.createElement('option');
     optBase.value = s.id;
-    optBase.textContent = `${s.label} (${s.dateFormatted.split(' ')[1] || ''})`;
+    optBase.textContent = `[${envOf(s)}] ${s.label} (${s.dateFormatted.split(' ')[1] || ''})`;
     selectBase.appendChild(optBase);
 
     const optCur = document.createElement('option');
     optCur.value = s.id;
-    optCur.textContent = `${s.label} (${s.dateFormatted.split(' ')[1] || ''})`;
+    optCur.textContent = `[${envOf(s)}] ${s.label} (${s.dateFormatted.split(' ')[1] || ''})`;
     selectCur.appendChild(optCur);
   });
 
@@ -512,6 +551,52 @@ function warnAboutComparability() {
   const text = warnings.join(' ');
   if (text && text !== lastWarning) toast(text, 'warn', 7000);
   lastWarning = text;
+}
+
+/** Sidebar controls: "Environments" dialog button and the default comparison mode. */
+function setupEnvironmentControls() {
+  const domainSelect = document.getElementById('domain-select');
+  if (!domainSelect || document.getElementById('urd-env-controls')) return;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'urd-env-controls';
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:12px;';
+  wrap.innerHTML = `
+    <button id="urd-env-btn" type="button" class="segment-btn" title="Treat several domains (e.g. test / qaint) as the same app">🌐 Environments…</button>
+    <label title="Which snapshot a page is compared against by default">
+      Default compare:
+      <select id="urd-compare-mode" style="width:100%">
+        <option value="auto">Other environment (if any)</option>
+        <option value="previous">Previous snapshot</option>
+      </select>
+    </label>
+  `;
+  domainSelect.insertAdjacentElement('afterend', wrap);
+
+  const modeSelect = wrap.querySelector('#urd-compare-mode');
+  modeSelect.value = prefs.get('compareMode', 'auto');
+  modeSelect.addEventListener('change', () => {
+    prefs.set('compareMode', modeSelect.value);
+    const snaps = groupedPages.get(selectedPageKey) || [];
+    if (snaps.length) {
+      currentSnap = snaps[0];
+      baselineSnap = defaultBaselineFor(snaps);
+      renderTimelineForSelectedPage();
+      updateComparisonDropdowns();
+      runComparison();
+    }
+  });
+
+  wrap.querySelector('#urd-env-btn').addEventListener('click', () => {
+    openEnvironmentsDialog({
+      domains: [...new Set(allSnapshots.map(s => s.domain).filter(Boolean))].sort(),
+      groups: envGroups,
+      onChange: () => {
+        pendingReselectUrl = currentSnap ? currentSnap.url : null;
+        loadDataFromUrlParamsOrStorage();
+      }
+    });
+  });
 }
 
 /** Sensitivity slider + ignore-region controls, injected next to the visual mode controls. */
@@ -707,8 +792,9 @@ function renderDomComparison() {
   });
 
   // Calculate text diff
-  const textA = normalizeHtmlForDiff(domA.html || '');
-  const textB = normalizeHtmlForDiff(domB.html || '');
+  const masked = hostsToMask();
+  const textA = normalizeHtmlForDiff(domA.html || '', masked);
+  const textB = normalizeHtmlForDiff(domB.html || '', masked);
   const diffResult = computeTextDiff(textA, textB);
   if (diffResult.stats.truncated) {
     toast('DOM changes are too large to diff line-by-line; showing a full replace.', 'warn');
@@ -794,7 +880,11 @@ function renderMetadataComparison() {
         <span class="meta-card-val">${escapeHtml(metaB.title || metaA.title || 'Untitled')}</span>
       </div>
       <div class="meta-card">
-        <span class="meta-card-label">Target URL</span>
+        <span class="meta-card-label">Baseline URL (${escapeHtml(envOf(baselineSnap))})</span>
+        <span class="meta-card-val">${escapeHtml(baselineSnap.url)}</span>
+      </div>
+      <div class="meta-card">
+        <span class="meta-card-label">Current URL (${escapeHtml(envOf(currentSnap))})</span>
         <span class="meta-card-val">${escapeHtml(currentSnap.url)}</span>
       </div>
       <div class="meta-card">
@@ -959,7 +1049,8 @@ function exportHtmlReport() {
     <h1>UI Regression Audit Report</h1>
     <span class="status-badge">${escapeHtml(currentDiffResult.verdict)} &bull; ${currentDiffResult.diffPercentage}% Difference (${scopeLabel})</span>
     <table class="meta-table">
-      <tr><td>URL</td><td><a href="${escapeHtml(safeUrl)}" style="color: #38bdf8;" target="_blank" rel="noopener noreferrer">${escapeHtml(currentSnap.url)}</a></td></tr>
+      <tr><td>Baseline URL (A)</td><td>${escapeHtml(baselineSnap.url)} <em>[${escapeHtml(envOf(baselineSnap))}]</em></td></tr>
+      <tr><td>Current URL (B)</td><td><a href="${escapeHtml(safeUrl)}" style="color: #38bdf8;" target="_blank" rel="noopener noreferrer">${escapeHtml(currentSnap.url)}</a> <em>[${escapeHtml(envOf(currentSnap))}]</em></td></tr>
       ${sizeNote}
       <tr><td>Baseline (A)</td><td>${escapeHtml(baselineSnap.label)} (${baselineSnap.dateFormatted})</td></tr>
       <tr><td>Current (B)</td><td>${escapeHtml(currentSnap.label)} (${currentSnap.dateFormatted})</td></tr>

@@ -37,6 +37,33 @@ export function toast(message, type = 'info', ms = 4000) {
   setTimeout(() => el.remove(), ms);
 }
 
+/**
+ * Generic modal. build(container, close) fills the dialog; returns { close }.
+ */
+export function openModal(build, { maxWidth = 560, onClose = null } = {}) {
+  ensureStyles();
+  const bg = document.createElement('div');
+  bg.className = 'urd-modal-bg';
+  const modal = document.createElement('div');
+  modal.className = 'urd-modal';
+  modal.style.maxWidth = `${maxWidth}px`;
+  modal.style.maxHeight = '85vh';
+  modal.style.overflowY = 'auto';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  bg.appendChild(modal);
+  document.body.appendChild(bg);
+
+  const close = () => {
+    bg.remove();
+    if (onClose) onClose();
+  };
+  bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
+  bg.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  build(modal, close);
+  return { close };
+}
+
 export function confirmDialog(message, confirmLabel = 'Delete') {
   ensureStyles();
   return new Promise((resolve) => {

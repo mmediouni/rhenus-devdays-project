@@ -4,6 +4,7 @@
  */
 
 import { normalizeUrl } from './common.js';
+import { siblingUrls } from './environments.js';
 
 export { normalizeUrl };
 
@@ -96,6 +97,15 @@ export async function getSnapshotsForUrl(url) {
   const results = (await promisify(index.getAll(normalizeUrl(url)))) || [];
   results.sort((a, b) => b.timestamp - a.timestamp);
   return results;
+}
+
+/**
+ * Snapshots of a page across every domain in its environment group, newest first.
+ * Uses the pageKey index once per sibling domain (no full scan).
+ */
+export async function getSnapshotsForPage(url, groups = []) {
+  const lists = await Promise.all(siblingUrls(url, groups).map(u => getSnapshotsForUrl(u)));
+  return lists.flat().sort((a, b) => b.timestamp - a.timestamp);
 }
 
 /** Number of snapshots for a page without loading their payloads */

@@ -126,7 +126,15 @@ Switch seamlessly between 4 specialized visual comparison modes:
 - **Golden baseline**: pin any snapshot with `☆ Golden`; it becomes the default reference for that page.
 - Animations are frozen and fonts/images awaited before capture. Compare snapshots taken at the same window size (the dashboard warns when sizes differ).
 
-### 8. Standalone HTML Audit Reports
+### 8. Comparing Environments (TEST vs QAINT vs …)
+The same app often runs on several hosts, e.g. `rhex-test.appdev.service.rhs.zz` and `rhex-qaint.appdev.service.rhs.zz`. Define them as an **environment group** and they are treated as one application:
+- In the dashboard sidebar click **🌐 Environments…**. Groups like `rhex` (test + qaint) are **suggested automatically**; or tick domains and create one manually.
+- Pages with the same **path + query** on any domain of the group are merged into one entry, with environment badges (`test`, `qaint`) on every snapshot and in the A/B dropdowns. Existing snapshots merge immediately; nothing stored is rewritten.
+- **Default compare** (sidebar): *Other environment* compares the newest snapshot against the newest one from a different environment; *Previous snapshot* keeps classic before/after regression checks. The popup quick-compare follows the same setting.
+- Host names are **masked in the HTML diff** (`{env-host}`), so absolute URLs that differ only by host don't drown the real differences.
+- The popup lists snapshots of the same page from the other environments too.
+
+### 9. Standalone HTML Audit Reports
 - Click **Export HTML Report** to generate a single, self-contained HTML file containing embedded screenshots, diff summaries, and metadata.
 - Ideal for attaching to Pull Requests, bug tickets, or sending to QA managers.
 
@@ -192,10 +200,12 @@ rhenus-devdays-project/
 ├── dashboard/
 │   ├── dashboard.html       # Full-screen regression analysis studio
 │   ├── dashboard.css        # Studio design system & split-view styling
+│   ├── environments-ui.js   # "Environments…" dialog (suggested + manual groups)
 │   └── dashboard.js         # Visual slider wipe, DOM diffing, & HTML report export
 ├── utils/
 │   ├── db.js                # Promisified IndexedDB storage manager (indexed, validated import)
 │   ├── common.js            # escapeHtml, URL normalization, safe URL / image helpers
+│   ├── environments.js      # Environment groups: merge domains (test/qaint/...) into one app
 │   ├── ui.js                # In-page toast / confirm dialogs
 │   ├── visual-diff.js       # HTML5 Canvas pixel diff, ignore regions & heatmap mask generator
 │   └── text-diff.js         # Myers line diff & CSS landmark inspector

@@ -13,11 +13,18 @@ const CONTEXT_LINES = 3;
  * Normalizes serialized HTML so a line diff is meaningful:
  * strips script bodies and nonces, and puts each tag on its own line.
  */
-export function normalizeHtmlForDiff(html = '') {
-  return String(html)
+export function normalizeHtmlForDiff(html = '', maskHosts = []) {
+  let out = String(html)
     .replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, '$1/* script body omitted */$2')
-    .replace(/\s+nonce="[^"]*"/gi, '')
-    .replace(/>\s*</g, '>\n<');
+    .replace(/\s+nonce="[^"]*"/gi, '');
+
+  // When comparing environments, host names differ in every absolute URL; mask them
+  for (const host of maskHosts) {
+    if (!host) continue;
+    out = out.replace(new RegExp(host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '{env-host}');
+  }
+
+  return out.replace(/>\s*</g, '>\n<');
 }
 
 /**

@@ -2,13 +2,21 @@
  * UI Regression Detector - Popup Controller
  */
 
-import { getSnapshotsForUrl, deleteSnapshot } from '../utils/db.js';
+import { getSnapshotsForPage, deleteSnapshot } from '../utils/db.js';
+import { loadGroups, envLabel, pickDefaultPair } from '../utils/environments.js';
 import { compareImages } from '../utils/visual-diff.js';
 import { safeImageSrc, escapeHtml } from '../utils/common.js';
 import { confirmDialog } from '../utils/ui.js';
 
 let currentTab = null;
 let pageSnapshots = [];
+let envGroups = [];
+
+/** "[test] " prefix when the page is shared by several environments, else '' */
+function envPrefix(snap, snaps) {
+  const domains = new Set(snaps.map(s => s.domain));
+  return domains.size > 1 ? `[${envLabel(snap.domain, envGroups)}] ` : '';
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
   await initPopup();
@@ -48,7 +56,8 @@ async function refreshPageHistory() {
   if (!currentTab || !currentTab.url) return;
 
   try {
-    pageSnapshots = await getSnapshotsForUrl(currentTab.url);
+    envGroups = await loadGroups();
+    pageSnapshots = await getSnapshotsForPage(currentTab.url, envGroups);
     document.getElementById('page-snapshot-count').textContent = pageSnapshots.length;
 
     renderHistoryList(pageSnapshots);
@@ -111,15 +120,17 @@ async function updateQuickCompare(snapshots) {
 
   quickSection.classList.remove('hidden');
 
-  // snapshots are sorted newest first
-  const latest = snapshots[0];
-  const previous = snapshots[1]; // baseline is immediate previous or first snapshot
+  // snapshots are sorted newest first. Same default as the dashboard: compare against the
+  // newest snapshot from another environment when there is one (setting is shared via localStorage).
+  let mode = 'auto';
+  try { mode = JSON.parse(localStorage.getItem('urd:compareMode')) || 'auto'; } catch (e) { /* default */ }
+  const { current: latest, baseline: previous } = pickDefaultPair(snapshots, mode);
 
   // Populate cards
-  document.getElementById('label-baseline').textContent = previous.label || previous.dateFormatted;
+  document.getElementById('label-baseline').textContent = envPrefix(previous, snapshots) + (previous.label || previous.dateFormatted);
   setThumb('thumb-baseline', previous.screenshot, 'Baseline');
 
-  document.getElementById('label-current').textContent = latest.label || latest.dateFormatted;
+  document.getElementById('label-current').textContent = envPrefix(latest, snapshots) + (latest.label || latest.dateFormatted);
   setThumb('thumb-current', latest.screenshot, 'Latest');
 
   badge.textContent = 'Calculating diff...';
@@ -164,7 +175,7 @@ function renderHistoryList(snapshots) {
     item.innerHTML = `
       <img alt="Thumb" class="item-thumb" />
       <div class="item-info">
-        <span class="item-label truncate">${escapeHtml(snap.label)}</span>
+        <span class="item-label truncate">${escapeHtml(envPrefix(snap, snapshots) + snap.label)}</span>
         <span class="item-time">${snap.dateFormatted}</span>
       </div>
       <div class="item-actions">
