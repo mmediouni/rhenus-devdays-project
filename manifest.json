@@ -1,14 +1,13 @@
 {
   "manifest_version": 3,
   "name": "UI Regression Detector",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Capture page snapshots (screenshot, DOM, CSS) to detect visual and structural regressions between revisions.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
-    "unlimitedStorage",
-    "tabs"
+    "unlimitedStorage"
   ],
   "action": {
     "default_popup": "popup/popup.html",
@@ -22,17 +21,9 @@
     "service_worker": "background/service-worker.js",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
-      "run_at": "document_idle"
-    }
-  ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }
 }
-

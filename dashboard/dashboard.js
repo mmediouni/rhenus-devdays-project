@@ -6,7 +6,6 @@
 
 import {
   getAllSnapshots,
-  getSnapshot,
   deleteSnapshot,
   clearAllSnapshots,
   exportAllData,
@@ -17,12 +16,27 @@ import { compareImages } from '../utils/visual-diff.js';
 import {
   computeTextDiff,
   compareLandmarkStyles,
-  compareDomStats
+  compareDomStats,
+  normalizeHtmlForDiff
 } from '../utils/text-diff.js';
+import { escapeHtml, normalizeUrl as normalizeUrlKey, safeImageSrc, safeHttpUrl } from '../utils/common.js';
+import { toast, confirmDialog } from '../utils/ui.js';
+
+// Per-viewer preferences (localStorage may be unavailable -> degrade gracefully)
+const prefs = {
+  get(key, fallback) {
+    try {
+      const raw = localStorage.getItem(`urd:${key}`);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(`urd:${key}`, JSON.stringify(value)); } catch (e) { /* ignore */ }
+  }
+};
 
 // State
 let allSnapshots = [];
-let filteredSnapshots = [];
 let groupedPages = new Map(); // normalizedUrl -> array of snapshots
 let selectedPageKey = null;
 
@@ -30,7 +44,6 @@ let baselineSnap = null;
 let currentSnap = null;
 let currentDiffResult = null;
 let activeVisualScope = 'viewport'; // 'viewport' | 'fullpage'
-let activeVisualMode = 'side-by-side';
 let activeCodeDiffMode = 'unified'; // or 'split'
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -67,7 +80,7 @@ function setupEventListeners() {
   }
 
   // Visual mode segments (Side-by-side, slider, diff-mask, onion)
-  document.querySelectorAll('.segment-btn').forEach(btn => {
+  document.querySelectorAll('.segment-btn[data-mode]').forEach(btn => {
     btn.addEventListener('click', () => {
       setVisualMode(btn.dataset.mode);
     });
@@ -92,6 +105,9 @@ function setupEventListeners() {
 
   // Slider Wipe draggable handle
   setupSliderHandle();
+
+  // Tolerance slider + ignore regions
+  setupVisualExtras();
 
   // Export HTML Report
   document.getElementById('btn-export-report').addEventListener('click', exportHtmlReport);
@@ -122,6 +138,7 @@ async function loadDataFromUrlParamsOrStorage() {
     showEmptyWorkspace();
     return;
   }
+  hideEmptyWorkspace();
 
   // Determine initial page
   if (targetUrl && groupedPages.has(normalizeUrlKey(targetUrl))) {
@@ -145,11 +162,11 @@ async function loadDataFromUrlParamsOrStorage() {
     if (targetBaseline && snapsForPage.find(s => s.id === targetBaseline)) {
       baselineSnap = snapsForPage.find(s => s.id === targetBaseline);
     } else {
-      // baseline is previous or first snapshot
-      baselineSnap = snapsForPage.length > 1 ? snapsForPage[1] : snapsForPage[0];
+      baselineSnap = defaultBaselineFor(snapsForPage);
     }
   }
 
+  renderTimelineForSelectedPage();
   updateComparisonDropdowns();
   await runComparison();
 }
@@ -170,13 +187,21 @@ function rebuildPageGroups() {
   }
 }
 
-function normalizeUrlKey(url) {
-  try {
-    const p = new URL(url);
-    return `${p.origin}${p.pathname.replace(/\/$/, '')}`;
-  } catch (e) {
-    return url;
-  }
+/** Golden baseline (pinned reference) for a page, if any and still existing */
+function getGoldenSnapshot(pageKey) {
+  const id = prefs.get(`golden:${pageKey}`, null);
+  if (!id) return null;
+  return (groupedPages.get(pageKey) || []).find(s => s.id === id) || null;
+}
+
+function defaultBaselineFor(snaps) {
+  const golden = getGoldenSnapshot(selectedPageKey);
+  if (golden && snaps[0] && golden.id !== snaps[0].id) return golden;
+  return snaps.length > 1 ? snaps[1] : snaps[0] || null;
+}
+
+function getIgnoreRegions() {
+  return prefs.get(`ignore:${selectedPageKey}`, []);
 }
 
 function populateDomainDropdown() {
@@ -235,12 +260,12 @@ function renderPageList(query = '', domainFilter = 'ALL') {
     item.addEventListener('click', () => {
       selectedPageKey = key;
       renderPageList(query, domainFilter);
-      renderTimelineForSelectedPage();
 
       const pageSnaps = groupedPages.get(key) || [];
       currentSnap = pageSnaps[0] || null;
-      baselineSnap = pageSnaps.length > 1 ? pageSnaps[1] : pageSnaps[0] || null;
+      baselineSnap = defaultBaselineFor(pageSnaps);
 
+      renderTimelineForSelectedPage();
       updateComparisonDropdowns();
       runComparison();
     });
@@ -263,23 +288,26 @@ function renderTimelineForSelectedPage() {
     return;
   }
 
-  pageSnaps.forEach((snap, idx) => {
+  const golden = getGoldenSnapshot(selectedPageKey);
+
+  pageSnaps.forEach((snap) => {
     const card = document.createElement('div');
     const isBase = baselineSnap && baselineSnap.id === snap.id;
     const isCur = currentSnap && currentSnap.id === snap.id;
+    const isGolden = golden && golden.id === snap.id;
 
     card.className = `timeline-card ${isBase ? 'is-baseline' : ''} ${isCur ? 'is-current' : ''}`;
 
     card.innerHTML = `
       <div class="card-top">
-        <span class="card-label truncate">${escapeHtml(snap.label)}</span>
+        <span class="card-label truncate">${isGolden ? '★ ' : ''}${escapeHtml(snap.label)}</span>
         <div class="card-role-badges">
           ${isBase ? '<span class="role-badge badge-a">Baseline A</span>' : ''}
           ${isCur ? '<span class="role-badge badge-b">Current B</span>' : ''}
         </div>
       </div>
       <div class="card-body">
-        <img src="${snap.screenshot}" alt="Thumb" class="card-thumb" />
+        <img alt="Thumb" class="card-thumb" />
         <div class="card-meta">
           <span>📅 ${snap.dateFormatted}</span>
           <span>📐 ${snap.viewport?.width || '--'}x${snap.viewport?.height || '--'}</span>
@@ -290,10 +318,19 @@ function renderTimelineForSelectedPage() {
         <div class="role-buttons">
           <button class="btn-role ${isBase ? 'active-a' : ''}" data-role="A">Set as A</button>
           <button class="btn-role ${isCur ? 'active-b' : ''}" data-role="B">Set as B</button>
+          <button class="btn-role ${isGolden ? 'active-a' : ''}" data-role="golden" title="${isGolden ? 'Unpin golden baseline' : 'Pin as golden baseline (default reference for this page)'}">${isGolden ? '★ Golden' : '☆ Golden'}</button>
         </div>
-        <button class="btn-del-snap" title="Delete snapshot" data-id="${snap.id}">✕</button>
+        <button class="btn-del-snap" title="Delete snapshot" aria-label="Delete snapshot">✕</button>
       </div>
     `;
+
+    card.querySelector('.card-thumb').src = safeImageSrc(snap.screenshot);
+
+    card.querySelector('[data-role="golden"]').addEventListener('click', () => {
+      prefs.set(`golden:${selectedPageKey}`, isGolden ? null : snap.id);
+      if (!isGolden) setBaseline(snap.id);
+      else renderTimelineForSelectedPage();
+    });
 
     // Role A / B buttons
     card.querySelector('[data-role="A"]').addEventListener('click', () => {
@@ -306,12 +343,27 @@ function renderTimelineForSelectedPage() {
     // Delete snapshot
     card.querySelector('.btn-del-snap').addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (confirm(`Delete snapshot "${snap.label}"?`)) {
+      if (await confirmDialog(`Delete snapshot "${snap.label}"?`)) {
         await deleteSnapshot(snap.id);
         allSnapshots = await getAllSnapshots();
         rebuildPageGroups();
+        const remaining = groupedPages.get(selectedPageKey) || [];
+        if (remaining.length === 0) {
+          baselineSnap = null;
+          currentSnap = null;
+          selectedPageKey = groupedPages.keys().next().value || null;
+          if (!selectedPageKey) return showEmptyWorkspace();
+          const fallback = groupedPages.get(selectedPageKey);
+          currentSnap = fallback[0];
+          baselineSnap = defaultBaselineFor(fallback);
+        } else {
+          if (!remaining.find(s => s.id === currentSnap?.id)) currentSnap = remaining[0];
+          if (!remaining.find(s => s.id === baselineSnap?.id)) baselineSnap = defaultBaselineFor(remaining);
+        }
+        populateDomainDropdown();
         renderPageList();
         renderTimelineForSelectedPage();
+        updateComparisonDropdowns();
         updateTopMetrics();
         await runComparison();
       }
@@ -390,17 +442,152 @@ async function setVisualScope(scope) {
   await runVisualComparison();
 }
 
+const MAX_DIFF_PIXELS_VIEWPORT = 10_000_000;
+const MAX_DIFF_PIXELS_FULLPAGE = 4_000_000;
+let visualRunId = 0;
+
 async function runVisualComparison() {
   if (!baselineSnap || !currentSnap) return;
   const { imgA, imgB, label } = getActiveImages();
   if (!imgA || !imgB) return;
 
+  const runId = ++visualRunId;
+
+  // Show the images right away so previews never depend on the (heavy) diff succeeding
+  showPreviewImages(imgA, imgB);
+  document.getElementById('diff-percent-badge').textContent = `Calculating (${label})…`;
+  document.getElementById('diff-stats-detail').textContent = '';
+
+  // Let the browser paint the previews / "Calculating" text before the heavy work
+  await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  if (runId !== visualRunId) return;
+
   try {
-    currentDiffResult = await compareImages(imgA, imgB);
+    const result = await compareImages(imgA, imgB, {
+      threshold: prefs.get('sensitivity', 10) / 100,
+      ignoreRegions: getIgnoreRegions(),
+      // Full-page images can be tens of millions of pixels; compare a downscaled copy
+      maxPixels: activeVisualScope === 'fullpage' ? MAX_DIFF_PIXELS_FULLPAGE : MAX_DIFF_PIXELS_VIEWPORT
+    });
+    if (runId !== visualRunId) return; // a newer comparison superseded this one
+    currentDiffResult = result;
     renderVisualComparison(currentDiffResult, imgA, imgB, label);
+    warnAboutComparability();
   } catch (err) {
+    if (runId !== visualRunId) return;
     console.error('Visual compare error:', err);
+    document.getElementById('diff-percent-badge').textContent = 'Comparison failed';
+    document.getElementById('diff-stats-detail').textContent = err.message;
+    toast(`Visual comparison failed: ${err.message}`, 'error');
   }
+}
+
+function showPreviewImages(imgA, imgB) {
+  const srcA = safeImageSrc(imgA);
+  const srcB = safeImageSrc(imgB);
+  document.getElementById('img-baseline').src = srcA;
+  document.getElementById('img-current').src = srcB;
+  document.getElementById('slider-img-baseline').src = srcA;
+  document.getElementById('slider-img-current').src = srcB;
+  document.getElementById('img-diff-mask').src = srcA;
+  document.getElementById('onion-img-baseline').src = srcA;
+  document.getElementById('onion-img-current').src = srcB;
+}
+
+let lastWarning = '';
+function warnAboutComparability() {
+  const warnings = [];
+  if (currentDiffResult && currentDiffResult.sizeMismatch) {
+    const a = currentDiffResult.sizeA;
+    const b = currentDiffResult.sizeB;
+    const widthDiffers = a.width !== b.width;
+    // A full-page height change is an expected result of content changes, not a capture problem
+    if (widthDiffers || activeVisualScope === 'viewport') {
+      warnings.push(`Image sizes differ (${a.width}×${a.height} vs ${b.width}×${b.height}); the extra area counts as changed. Compare snapshots taken at the same window size.`);
+    }
+  }
+  if (activeVisualScope === 'fullpage' && ((baselineSnap && baselineSnap.fullPageFailed) || (currentSnap && currentSnap.fullPageFailed))) {
+    warnings.push('A full-page capture failed for one of these snapshots; the viewport image was used instead.');
+  }
+  const text = warnings.join(' ');
+  if (text && text !== lastWarning) toast(text, 'warn', 7000);
+  lastWarning = text;
+}
+
+/** Sensitivity slider + ignore-region controls, injected next to the visual mode controls. */
+function setupVisualExtras() {
+  const host = document.getElementById('visual-mode-controls');
+  if (!host || document.getElementById('urd-extras')) return;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'urd-extras';
+  wrap.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-left:12px;font-size:12px;';
+  wrap.innerHTML = `
+    <label title="Per-pixel color tolerance. Higher = ignore smaller color differences.">Tolerance
+      <input id="urd-sensitivity" type="range" min="0" max="30" step="1" style="vertical-align:middle;width:90px" />
+      <span id="urd-sensitivity-val"></span>
+    </label>
+    <button id="urd-clear-ignore" type="button" class="segment-btn" title="Shift+drag on the Difference Mask to exclude a region (ads, timestamps, carousels)">Clear ignored regions</button>
+  `;
+  host.appendChild(wrap);
+
+  const slider = wrap.querySelector('#urd-sensitivity');
+  const val = wrap.querySelector('#urd-sensitivity-val');
+  slider.value = prefs.get('sensitivity', 10);
+  val.textContent = `${slider.value}%`;
+  slider.addEventListener('input', () => { val.textContent = `${slider.value}%`; });
+  slider.addEventListener('change', () => {
+    prefs.set('sensitivity', Number(slider.value));
+    runVisualComparison();
+  });
+
+  wrap.querySelector('#urd-clear-ignore').addEventListener('click', () => {
+    prefs.set(`ignore:${selectedPageKey}`, []);
+    toast('Ignored regions cleared.', 'success');
+    runVisualComparison();
+  });
+
+  setupIgnoreRegionDrawing();
+}
+
+/** Shift+drag on the diff mask image to add an ignore region (stored in original image pixels). */
+function setupIgnoreRegionDrawing() {
+  const img = document.getElementById('img-diff-mask');
+  if (!img) return;
+  let start = null;
+
+  const toImagePoint = (e) => {
+    const rect = img.getBoundingClientRect();
+    const w = currentDiffResult ? currentDiffResult.width : img.naturalWidth;
+    const h = currentDiffResult ? currentDiffResult.height : img.naturalHeight;
+    return {
+      x: Math.max(0, Math.min(w, ((e.clientX - rect.left) / rect.width) * w)),
+      y: Math.max(0, Math.min(h, ((e.clientY - rect.top) / rect.height) * h))
+    };
+  };
+
+  img.addEventListener('pointerdown', (e) => {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    start = toImagePoint(e);
+    img.setPointerCapture(e.pointerId);
+  });
+  img.addEventListener('pointerup', (e) => {
+    if (!start) return;
+    const end = toImagePoint(e);
+    const region = {
+      x: Math.round(Math.min(start.x, end.x)),
+      y: Math.round(Math.min(start.y, end.y)),
+      w: Math.round(Math.abs(end.x - start.x)),
+      h: Math.round(Math.abs(end.y - start.y))
+    };
+    start = null;
+    if (region.w < 4 || region.h < 4) return;
+    prefs.set(`ignore:${selectedPageKey}`, [...getIgnoreRegions(), region]);
+    toast('Region will be ignored in comparisons.', 'success');
+    runVisualComparison();
+  });
+  img.addEventListener('dragstart', (e) => e.preventDefault());
 }
 
 /**
@@ -437,17 +624,21 @@ function renderVisualComparison(diff, imgA, imgB, scopeLabel = 'Viewport') {
   const iconEl = document.getElementById('diff-status-icon');
 
   badgeEl.textContent = `${diff.diffPercentage}% Diff (${scopeLabel})`;
-  statsEl.textContent = `${diff.diffPixels.toLocaleString()} of ${diff.totalPixels.toLocaleString()} pixels changed`;
+  statsEl.textContent = `${diff.diffPixels.toLocaleString()} of ${diff.totalPixels.toLocaleString()} pixels changed` +
+    (diff.scale < 1 ? ' (approx., downscaled)' : '') +
+    (diff.sizeMismatch && diff.sizeA.height !== diff.sizeB.height && diff.sizeA.width === diff.sizeB.width
+      ? ` • page height ${diff.sizeA.height}px → ${diff.sizeB.height}px`
+      : '');
 
   card.classList.remove('status-pass', 'status-warning', 'status-regression');
 
-  if (diff.diffPercentage === 0) {
+  if (diff.verdict === 'PASS') {
     card.classList.add('status-pass');
     verdictEl.textContent = 'Pixel Perfect Match';
     iconEl.textContent = '✓';
     document.getElementById('metric-status').textContent = 'Match';
     document.getElementById('metric-status').className = 'metric-value status-ready';
-  } else if (diff.diffPercentage < 0.2) {
+  } else if (diff.verdict === 'MINOR_DIFF') {
     card.classList.add('status-warning');
     verdictEl.textContent = 'Minor Variation';
     iconEl.textContent = '⚠';
@@ -461,20 +652,33 @@ function renderVisualComparison(diff, imgA, imgB, scopeLabel = 'Viewport') {
     document.getElementById('metric-status').className = 'metric-value';
   }
 
+  const srcA = safeImageSrc(imgA);
+  const srcB = safeImageSrc(imgB);
+
+  // Tall (full-page) images: size the slider box to the image ratio and top-align onion layers
+  const tall = activeVisualScope === 'fullpage';
+  const sliderBox = document.getElementById('slider-box');
+  const onionBox = document.querySelector('.onion-view-box');
+  if (sliderBox) {
+    sliderBox.classList.toggle('tall', tall);
+    sliderBox.style.aspectRatio = tall && diff.width && diff.height ? `${diff.width} / ${diff.height}` : '';
+  }
+  if (onionBox) onionBox.classList.toggle('tall', tall);
+
   // Side-by-side images
-  document.getElementById('img-baseline').src = imgA;
-  document.getElementById('img-current').src = imgB;
+  document.getElementById('img-baseline').src = srcA;
+  document.getElementById('img-current').src = srcB;
 
   // Slider Wipe images
-  document.getElementById('slider-img-baseline').src = imgA;
-  document.getElementById('slider-img-current').src = imgB;
+  document.getElementById('slider-img-baseline').src = srcA;
+  document.getElementById('slider-img-current').src = srcB;
 
   // Diff Mask
-  document.getElementById('img-diff-mask').src = diff.diffDataUrl || imgA;
+  document.getElementById('img-diff-mask').src = diff.diffDataUrl || srcA;
 
   // Onion skin
-  document.getElementById('onion-img-baseline').src = imgA;
-  document.getElementById('onion-img-current').src = imgB;
+  document.getElementById('onion-img-baseline').src = srcA;
+  document.getElementById('onion-img-current').src = srcB;
 }
 
 function renderDomComparison() {
@@ -503,9 +707,12 @@ function renderDomComparison() {
   });
 
   // Calculate text diff
-  const textA = domA.html || '';
-  const textB = domB.html || '';
+  const textA = normalizeHtmlForDiff(domA.html || '');
+  const textB = normalizeHtmlForDiff(domB.html || '');
   const diffResult = computeTextDiff(textA, textB);
+  if (diffResult.stats.truncated) {
+    toast('DOM changes are too large to diff line-by-line; showing a full replace.', 'warn');
+  }
 
   document.getElementById('dom-add-count').textContent = `+${diffResult.stats.added}`;
   document.getElementById('dom-del-count').textContent = `-${diffResult.stats.deleted}`;
@@ -629,8 +836,7 @@ function switchTab(tabId) {
 }
 
 function setVisualMode(mode) {
-  activeVisualMode = mode;
-  document.querySelectorAll('.segment-btn').forEach(btn => {
+  document.querySelectorAll('.segment-btn[data-mode]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === mode);
   });
 
@@ -664,29 +870,47 @@ function setupSliderHandle() {
   const handle = document.getElementById('slider-handle');
   let isDragging = false;
 
-  const updatePosition = (clientX) => {
-    const rect = box.getBoundingClientRect();
-    let x = clientX - rect.left;
-    x = Math.max(0, Math.min(x, rect.width));
-    const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+  let percentNow = 50;
 
-    box.style.setProperty('--slider-pos', `${percent}%`);
+  const setPercent = (percent) => {
+    percentNow = Math.max(0, Math.min(100, percent));
+    box.style.setProperty('--slider-pos', `${percentNow}%`);
+    handle.setAttribute('aria-valuenow', String(Math.round(percentNow)));
   };
 
-  handle.addEventListener('mousedown', (e) => {
+  const updatePosition = (clientX) => {
+    const rect = box.getBoundingClientRect();
+    if (!rect.width) return;
+    setPercent(((clientX - rect.left) / rect.width) * 100);
+  };
+
+  // Keyboard + screen reader support
+  handle.setAttribute('role', 'slider');
+  handle.setAttribute('tabindex', '0');
+  handle.setAttribute('aria-label', 'Comparison position');
+  handle.setAttribute('aria-valuemin', '0');
+  handle.setAttribute('aria-valuemax', '100');
+  handle.setAttribute('aria-valuenow', '50');
+  handle.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 10 : 2;
+    if (e.key === 'ArrowLeft') { setPercent(percentNow - step); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { setPercent(percentNow + step); e.preventDefault(); }
+    else if (e.key === 'Home') { setPercent(0); e.preventDefault(); }
+    else if (e.key === 'End') { setPercent(100); e.preventDefault(); }
+  });
+
+  // Pointer events cover mouse, touch and pen
+  handle.addEventListener('pointerdown', (e) => {
     isDragging = true;
+    handle.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
-
-  window.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      updatePosition(e.clientX);
-    }
+  handle.addEventListener('pointermove', (e) => {
+    if (isDragging) updatePosition(e.clientX);
   });
-
-  window.addEventListener('mouseup', () => {
-    isDragging = false;
-  });
+  const stopDrag = () => { isDragging = false; };
+  handle.addEventListener('pointerup', stopDrag);
+  handle.addEventListener('pointercancel', stopDrag);
 
   box.addEventListener('click', (e) => {
     updatePosition(e.clientX);
@@ -698,11 +922,18 @@ function setupSliderHandle() {
  */
 function exportHtmlReport() {
   if (!baselineSnap || !currentSnap || !currentDiffResult) {
-    alert('Please select both Baseline and Current snapshots first.');
+    toast('Please select both Baseline and Current snapshots first.', 'warn');
     return;
   }
 
-  const { imgA, imgB, label: scopeLabel } = getActiveImages();
+  const { imgA: rawA, imgB: rawB, label: scopeLabel } = getActiveImages();
+  const imgA = safeImageSrc(rawA);
+  const imgB = safeImageSrc(rawB);
+  const diffImg = safeImageSrc(currentDiffResult.diffDataUrl);
+  const safeUrl = safeHttpUrl(currentSnap.url);
+  const sizeNote = currentDiffResult.sizeMismatch
+    ? `<tr><td>Warning</td><td>Image sizes differ (${currentDiffResult.sizeA.width}×${currentDiffResult.sizeA.height} vs ${currentDiffResult.sizeB.width}×${currentDiffResult.sizeB.height})</td></tr>`
+    : '';
 
   const reportHtml = `<!DOCTYPE html>
 <html lang="en">
@@ -728,7 +959,8 @@ function exportHtmlReport() {
     <h1>UI Regression Audit Report</h1>
     <span class="status-badge">${escapeHtml(currentDiffResult.verdict)} &bull; ${currentDiffResult.diffPercentage}% Difference (${scopeLabel})</span>
     <table class="meta-table">
-      <tr><td>URL</td><td><a href="${escapeHtml(currentSnap.url)}" style="color: #38bdf8;" target="_blank">${escapeHtml(currentSnap.url)}</a></td></tr>
+      <tr><td>URL</td><td><a href="${escapeHtml(safeUrl)}" style="color: #38bdf8;" target="_blank" rel="noopener noreferrer">${escapeHtml(currentSnap.url)}</a></td></tr>
+      ${sizeNote}
       <tr><td>Baseline (A)</td><td>${escapeHtml(baselineSnap.label)} (${baselineSnap.dateFormatted})</td></tr>
       <tr><td>Current (B)</td><td>${escapeHtml(currentSnap.label)} (${currentSnap.dateFormatted})</td></tr>
       <tr><td>Comparison Scope</td><td><strong>${escapeHtml(scopeLabel)}</strong></td></tr>
@@ -750,7 +982,7 @@ function exportHtmlReport() {
 
   <div class="card" style="margin-top: 20px;">
     <h3>Regression Heatmap (Pink highlights altered regions)</h3>
-    <img src="${currentDiffResult.diffDataUrl}" alt="Diff Heatmap" />
+    <img src="${diffImg}" alt="Diff Heatmap" />
   </div>
 </body>
 </html>`;
@@ -771,24 +1003,22 @@ async function handleImportJson(e) {
   reader.onload = async (evt) => {
     try {
       const data = JSON.parse(evt.target.result);
-      const count = await importData(data);
-      alert(`Successfully imported ${count} snapshots!`);
-      allSnapshots = await getAllSnapshots();
-      rebuildPageGroups();
-      populateDomainDropdown();
-      updateTopMetrics();
-      renderPageList();
-      renderTimelineForSelectedPage();
-      await runComparison();
+      const { imported, skipped } = await importData(data);
+      toast(
+        `Imported ${imported} snapshot${imported === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} invalid` : ''}.`,
+        skipped ? 'warn' : 'success'
+      );
+      await loadDataFromUrlParamsOrStorage();
     } catch (err) {
-      alert(`Import error: ${err.message}`);
+      toast(`Import error: ${err.message}`, 'error');
     }
   };
   reader.readAsText(file);
+  e.target.value = '';
 }
 
 async function handleClearAll() {
-  if (confirm('Are you sure you want to permanently clear ALL saved snapshots across all pages?')) {
+  if (await confirmDialog('Permanently clear ALL saved snapshots across all pages?', 'Clear all')) {
     await clearAllSnapshots();
     allSnapshots = [];
     groupedPages.clear();
@@ -799,16 +1029,36 @@ async function handleClearAll() {
   }
 }
 
+/** Non-destructive empty state: hides the workspace instead of wiping its DOM. */
 function showEmptyWorkspace() {
   const main = document.querySelector('.main-content');
-  main.innerHTML = `
-    <div class="diff-empty" style="padding-top: 100px;">
+  let banner = document.getElementById('urd-empty');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'urd-empty';
+    banner.className = 'diff-empty';
+    banner.style.paddingTop = '100px';
+    banner.innerHTML = `
       <h2 style="color: var(--cyan); margin-bottom: 8px;">No Snapshots Recorded Yet</h2>
       <p style="color: var(--text-dim); max-width: 400px; margin: 0 auto;">
         Open any webpage, click the UI Regression Detector extension icon in your Chrome toolbar, and take your first snapshot!
       </p>
-    </div>
-  `;
+    `;
+    main.appendChild(banner);
+  }
+  for (const child of main.children) {
+    if (child !== banner) child.style.display = 'none';
+  }
+  banner.style.display = '';
+}
+
+function hideEmptyWorkspace() {
+  const main = document.querySelector('.main-content');
+  const banner = document.getElementById('urd-empty');
+  if (banner) banner.style.display = 'none';
+  for (const child of main.children) {
+    if (child !== banner) child.style.display = '';
+  }
 }
 
 function downloadFile(filename, content, type) {
@@ -821,14 +1071,4 @@ function downloadFile(filename, content, type) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-function escapeHtml(text) {
-  if (!text) return '';
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }

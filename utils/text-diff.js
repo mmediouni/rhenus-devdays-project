@@ -1,26 +1,82 @@
 /**
  * UI Regression Detector - Text & DOM Diff Engine
- * Computes line-by-line differences, Myers LCS algorithm,
- * and structural comparisons for HTML and CSS snapshots.
+ * Line diff using the Myers O(ND) algorithm with common prefix/suffix trimming,
+ * plus structural comparisons for CSS landmarks and DOM stats.
  */
 
+import { escapeHtml } from './common.js';
+
+const MAX_EDIT_DISTANCE = 3000;
+const CONTEXT_LINES = 3;
+
 /**
- * Computes diff between two text strings using LCS
- * @param {string} textA - Baseline text
- * @param {string} textB - Current text
- * @returns {Object} diff result with lines, stats, and HTML renderers
+ * Normalizes serialized HTML so a line diff is meaningful:
+ * strips script bodies and nonces, and puts each tag on its own line.
+ */
+export function normalizeHtmlForDiff(html = '') {
+  return String(html)
+    .replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, '$1/* script body omitted */$2')
+    .replace(/\s+nonce="[^"]*"/gi, '')
+    .replace(/>\s*</g, '>\n<');
+}
+
+/**
+ * Computes diff between two text strings.
+ * @returns {Object} { diffItems, stats, renderUnifiedHtml, renderSplitHtml }
  */
 export function computeTextDiff(textA = '', textB = '') {
   const linesA = textA.split(/\r?\n/);
   const linesB = textB.split(/\r?\n/);
 
-  const lcsMatrix = buildLcsMatrix(linesA, linesB);
-  const diffItems = backtrackLcs(lcsMatrix, linesA, linesB, linesA.length, linesB.length);
+  // Trim common prefix / suffix so the expensive part only sees the changed middle
+  let start = 0;
+  const minLen = Math.min(linesA.length, linesB.length);
+  while (start < minLen && linesA[start] === linesB[start]) start++;
+
+  let endA = linesA.length;
+  let endB = linesB.length;
+  while (endA > start && endB > start && linesA[endA - 1] === linesB[endB - 1]) {
+    endA--;
+    endB--;
+  }
+
+  const midA = linesA.slice(start, endA);
+  const midB = linesB.slice(start, endB);
+
+  let ops = myersDiff(midA, midB, MAX_EDIT_DISTANCE);
+  let truncated = false;
+  if (ops === null) {
+    // Too different to diff precisely: show the middle as one block replace
+    truncated = true;
+    ops = [
+      ...midA.map(text => ({ type: 'delete', text })),
+      ...midB.map(text => ({ type: 'add', text }))
+    ];
+  }
+
+  const diffItems = [];
+  let lineA = 0;
+  let lineB = 0;
+
+  for (let i = 0; i < start; i++) {
+    diffItems.push({ type: 'equal', text: linesA[i], lineA: ++lineA, lineB: ++lineB });
+  }
+  for (const op of ops) {
+    if (op.type === 'equal') {
+      diffItems.push({ type: 'equal', text: op.text, lineA: ++lineA, lineB: ++lineB });
+    } else if (op.type === 'delete') {
+      diffItems.push({ type: 'delete', text: op.text, lineA: ++lineA, lineB: null });
+    } else {
+      diffItems.push({ type: 'add', text: op.text, lineA: null, lineB: ++lineB });
+    }
+  }
+  for (let i = endA; i < linesA.length; i++) {
+    diffItems.push({ type: 'equal', text: linesA[i], lineA: ++lineA, lineB: ++lineB });
+  }
 
   let added = 0;
   let deleted = 0;
   let unchanged = 0;
-
   for (const item of diffItems) {
     if (item.type === 'add') added++;
     else if (item.type === 'delete') deleted++;
@@ -35,7 +91,8 @@ export function computeTextDiff(textA = '', textB = '') {
       unchanged,
       totalA: linesA.length,
       totalB: linesB.length,
-      hasChanges: added > 0 || deleted > 0
+      hasChanges: added > 0 || deleted > 0,
+      truncated
     },
     renderUnifiedHtml: () => renderUnifiedView(diffItems),
     renderSplitHtml: () => renderSplitView(diffItems)
@@ -43,91 +100,131 @@ export function computeTextDiff(textA = '', textB = '') {
 }
 
 /**
- * Build dynamic programming matrix for LCS
+ * Myers O(ND) diff. Returns ordered ops [{type:'equal'|'add'|'delete', text}]
+ * or null if the edit distance exceeds maxD.
  */
-function buildLcsMatrix(a, b) {
-  const m = a.length;
-  const n = b.length;
-  // If inputs are excessively large (> 2000 lines), downsample or trim for speed
-  const maxLines = 1500;
-  const safeA = m > maxLines ? a.slice(0, maxLines) : a;
-  const safeB = n > maxLines ? b.slice(0, maxLines) : b;
-  const rows = safeA.length + 1;
-  const cols = safeB.length + 1;
+function myersDiff(a, b, maxD) {
+  const n = a.length;
+  const m = b.length;
 
-  const dp = new Array(rows);
-  for (let i = 0; i < rows; i++) {
-    dp[i] = new Uint16Array(cols);
-  }
+  if (n === 0 && m === 0) return [];
+  if (n === 0) return b.map(text => ({ type: 'add', text }));
+  if (m === 0) return a.map(text => ({ type: 'delete', text }));
 
-  for (let i = 0; i < safeA.length; i++) {
-    for (let j = 0; j < safeB.length; j++) {
-      if (safeA[i] === safeB[j]) {
-        dp[i + 1][j + 1] = dp[i][j] + 1;
+  const max = Math.min(n + m, maxD);
+  const off = max + 1;
+  const v = new Int32Array(2 * max + 3);
+  const trace = [];
+
+  for (let d = 0; d <= max; d++) {
+    // Snapshot of V (window k = -d..d) before processing step d
+    trace.push(v.slice(off - d, off + d + 1));
+
+    for (let k = -d; k <= d; k += 2) {
+      let x;
+      if (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1])) {
+        x = v[off + k + 1];
       } else {
-        dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        x = v[off + k - 1] + 1;
+      }
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) {
+        x++;
+        y++;
+      }
+      v[off + k] = x;
+
+      if (x >= n && y >= m) {
+        return backtrack(trace, a, b, d);
       }
     }
   }
-
-  return dp;
+  return null;
 }
 
-/**
- * Backtrack LCS matrix to produce diff items
- */
-function backtrackLcs(dp, a, b, i, j) {
-  const result = [];
-  let curI = Math.min(i, dp.length - 1);
-  let curJ = Math.min(j, dp[0].length - 1);
+function backtrack(trace, a, b, D) {
+  const ops = [];
+  let x = a.length;
+  let y = b.length;
 
-  let lineNumA = curI;
-  let lineNumB = curJ;
+  for (let d = D; d > 0; d--) {
+    const w = trace[d];
+    const k = x - y;
+    let prevK;
+    if (k === -d || (k !== d && w[k - 1 + d] < w[k + 1 + d])) {
+      prevK = k + 1;
+    } else {
+      prevK = k - 1;
+    }
+    const prevX = w[prevK + d];
+    const prevY = prevX - prevK;
 
-  const temp = [];
-
-  while (curI > 0 || curJ > 0) {
-    if (curI > 0 && curJ > 0 && a[curI - 1] === b[curJ - 1]) {
-      temp.push({
-        type: 'equal',
-        text: a[curI - 1],
-        lineA: curI,
-        lineB: curJ
-      });
-      curI--;
-      curJ--;
-    } else if (curJ > 0 && (curI === 0 || dp[curI][curJ - 1] >= dp[curI - 1][curJ])) {
-      temp.push({
-        type: 'add',
-        text: b[curJ - 1],
-        lineA: null,
-        lineB: curJ
-      });
-      curJ--;
-    } else if (curI > 0 && (curJ === 0 || dp[curI][curJ - 1] < dp[curI - 1][curJ])) {
-      temp.push({
-        type: 'delete',
-        text: a[curI - 1],
-        lineA: curI,
-        lineB: null
-      });
-      curI--;
+    while (x > prevX && y > prevY) {
+      ops.push({ type: 'equal', text: a[x - 1] });
+      x--;
+      y--;
+    }
+    if (x === prevX) {
+      ops.push({ type: 'add', text: b[y - 1] });
+      y--;
+    } else {
+      ops.push({ type: 'delete', text: a[x - 1] });
+      x--;
     }
   }
-
-  return temp.reverse();
+  while (x > 0 && y > 0) {
+    ops.push({ type: 'equal', text: a[x - 1] });
+    x--;
+    y--;
+  }
+  return ops.reverse();
 }
 
 /**
- * Render unified diff HTML
+ * Collapse long runs of unchanged lines into {type:'skip', count} markers.
  */
+function collapseEquals(items, context = CONTEXT_LINES) {
+  const keep = new Array(items.length).fill(false);
+  items.forEach((item, i) => {
+    if (item.type !== 'equal') {
+      for (let j = Math.max(0, i - context); j <= Math.min(items.length - 1, i + context); j++) {
+        keep[j] = true;
+      }
+    }
+  });
+  // If nothing changed, show nothing special (single skip marker)
+  const out = [];
+  let skipped = 0;
+  items.forEach((item, i) => {
+    if (keep[i]) {
+      if (skipped) {
+        out.push({ type: 'skip', count: skipped });
+        skipped = 0;
+      }
+      out.push(item);
+    } else {
+      skipped++;
+    }
+  });
+  if (skipped) out.push({ type: 'skip', count: skipped });
+  return out;
+}
+
+function renderSkipRow(count) {
+  return `<div class="diff-row diff-line-eq"><span class="diff-num"></span><span class="diff-num"></span><span class="diff-sign"></span><span class="diff-code">… ${count} unchanged line${count === 1 ? '' : 's'} …</span></div>`;
+}
+
 function renderUnifiedView(diffItems) {
   if (!diffItems || diffItems.length === 0) {
     return '<div class="diff-empty">No diff items.</div>';
   }
 
   let html = '<div class="diff-table unified-diff">';
-  for (const item of diffItems) {
+  for (const item of collapseEquals(diffItems)) {
+    if (item.type === 'skip') {
+      html += renderSkipRow(item.count);
+      continue;
+    }
     const typeClass = item.type === 'add' ? 'diff-line-add' : item.type === 'delete' ? 'diff-line-del' : 'diff-line-eq';
     const prefix = item.type === 'add' ? '+' : item.type === 'delete' ? '-' : ' ';
     const lineA = item.lineA !== null ? item.lineA : '';
@@ -146,17 +243,16 @@ function renderUnifiedView(diffItems) {
   return html;
 }
 
-/**
- * Render split (side-by-side) diff HTML
- */
 function renderSplitView(diffItems) {
   if (!diffItems || diffItems.length === 0) {
     return '<div class="diff-empty">No diff items.</div>';
   }
 
   let html = '<div class="diff-table split-diff">';
-  for (const item of diffItems) {
-    if (item.type === 'equal') {
+  for (const item of collapseEquals(diffItems)) {
+    if (item.type === 'skip') {
+      html += renderSkipRow(item.count);
+    } else if (item.type === 'equal') {
       html += `
         <div class="diff-split-row diff-line-eq">
           <div class="diff-cell cell-left">
@@ -197,7 +293,6 @@ function renderSplitView(diffItems) {
 
 /**
  * Compare computed CSS Landmark styles
- * e.g., body, header, nav, h1, buttons
  */
 export function compareLandmarkStyles(stylesA = {}, stylesB = {}) {
   const changes = [];
@@ -215,19 +310,12 @@ export function compareLandmarkStyles(stylesA = {}, stylesB = {}) {
       const valB = propsB[prop] || '—';
 
       if (valA !== valB) {
-        changedProps.push({
-          property: prop,
-          baseline: valA,
-          current: valB
-        });
+        changedProps.push({ property: prop, baseline: valA, current: valB });
       }
     }
 
     if (changedProps.length > 0) {
-      changes.push({
-        selector,
-        changedProps
-      });
+      changes.push({ selector, changedProps });
     }
   }
 
@@ -257,13 +345,3 @@ export function compareDomStats(domA = {}, domB = {}) {
 
   return comparisons;
 }
-
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-

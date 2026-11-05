@@ -4,6 +4,8 @@
 
 import { getSnapshotsForUrl, deleteSnapshot } from '../utils/db.js';
 import { compareImages } from '../utils/visual-diff.js';
+import { safeImageSrc, escapeHtml } from '../utils/common.js';
+import { confirmDialog } from '../utils/ui.js';
 
 let currentTab = null;
 let pageSnapshots = [];
@@ -115,22 +117,19 @@ async function updateQuickCompare(snapshots) {
 
   // Populate cards
   document.getElementById('label-baseline').textContent = previous.label || previous.dateFormatted;
-  document.getElementById('thumb-baseline').innerHTML = `<img src="${previous.screenshot}" alt="Baseline" />`;
+  setThumb('thumb-baseline', previous.screenshot, 'Baseline');
 
   document.getElementById('label-current').textContent = latest.label || latest.dateFormatted;
-  document.getElementById('thumb-current').innerHTML = `<img src="${latest.screenshot}" alt="Latest" />`;
+  setThumb('thumb-current', latest.screenshot, 'Latest');
 
   badge.textContent = 'Calculating diff...';
   badge.className = 'badge';
 
   try {
-    const diff = await compareImages(previous.screenshot, latest.screenshot);
-    badge.textContent = `${diff.diffPercentage}% diff`;
-    if (diff.diffPercentage === 0) {
-      badge.classList.add('badge-pass');
-    } else {
-      badge.classList.add('badge-diff');
-    }
+    // Downscale: the badge only needs an approximate percentage
+    const diff = await compareImages(previous.screenshot, latest.screenshot, { maxPixels: 600000 });
+    badge.textContent = diff.sizeMismatch ? `${diff.diffPercentage}% diff (size differs)` : `${diff.diffPercentage}% diff`;
+    badge.classList.add(diff.verdict === 'PASS' ? 'badge-pass' : 'badge-diff');
   } catch (e) {
     badge.textContent = 'Diff Ready';
   }
@@ -162,10 +161,8 @@ function renderHistoryList(snapshots) {
     const item = document.createElement('div');
     item.className = 'history-item';
 
-    const isLatest = idx === 0;
-
     item.innerHTML = `
-      <img src="${snap.screenshot}" alt="Thumb" class="item-thumb" />
+      <img alt="Thumb" class="item-thumb" />
       <div class="item-info">
         <span class="item-label truncate">${escapeHtml(snap.label)}</span>
         <span class="item-time">${snap.dateFormatted}</span>
@@ -186,6 +183,8 @@ function renderHistoryList(snapshots) {
       </div>
     `;
 
+    item.querySelector('.item-thumb').src = safeImageSrc(snap.screenshot);
+
     // View button
     item.querySelector('.btn-open-item').addEventListener('click', () => {
       openDashboard({
@@ -197,7 +196,7 @@ function renderHistoryList(snapshots) {
     // Delete button
     item.querySelector('.btn-del-item').addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (confirm(`Delete snapshot "${snap.label}"?`)) {
+      if (await confirmDialog(`Delete snapshot "${snap.label}"?`)) {
         await deleteSnapshot(snap.id);
         await refreshPageHistory();
       }
@@ -231,11 +230,12 @@ function hideStatus() {
   el.classList.add('hidden');
 }
 
-function escapeHtml(text) {
-  if (!text) return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+function setThumb(containerId, src, alt) {
+  const container = document.getElementById(containerId);
+  container.textContent = '';
+  const img = document.createElement('img');
+  img.alt = alt;
+  img.src = safeImageSrc(src);
+  container.appendChild(img);
 }
 

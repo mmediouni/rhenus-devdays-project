@@ -902,6 +902,13 @@ body {
 }
 
 .onion-val-text {
+  /* Fixed width so "5% Blend" -> "100% Blend" never shifts the slider or preview */
+  display: inline-block;
+  width: 9ch;
+  flex: 0 0 9ch;
+  text-align: left;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
   font-size: 12px;
   color: var(--cyan);
@@ -929,6 +936,21 @@ body {
   left: 50%;
   transform: translate(-50%, -50%);
   opacity: 0.5;
+}
+
+/* Full-page (tall image) layouts: fit to width and scroll, instead of shrinking/clipping */
+.slider-comparison-box.tall {
+  height: auto;
+  min-height: 0;
+}
+
+.onion-view-box.tall {
+  align-items: flex-start;
+}
+
+.onion-view-box.tall .onion-layer.current {
+  top: 0;
+  transform: translateX(-50%);
 }
 
 /* DOM Diff & Code Tab */

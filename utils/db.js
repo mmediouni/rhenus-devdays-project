@@ -1,11 +1,14 @@
 /**
  * UI Regression Detector - IndexedDB Storage Helper
- * Provides high-capacity client-side persistence for snapshots,
- * including base64 screenshots, full DOM structures, and CSS styles.
+ * High-capacity client-side persistence for snapshots.
  */
 
+import { normalizeUrl } from './common.js';
+
+export { normalizeUrl };
+
 const DB_NAME = 'UIRegressionDetectorDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'snapshots';
 
 let dbInstance = null;
@@ -18,17 +21,35 @@ export async function openDB() {
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
+      const tx = event.target.transaction;
+      let store;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         store.createIndex('pageUrl', 'url', { unique: false });
         store.createIndex('domain', 'domain', { unique: false });
         store.createIndex('timestamp', 'timestamp', { unique: false });
         store.createIndex('groupKey', 'groupKey', { unique: false });
+      } else {
+        store = tx.objectStore(STORE_NAME);
+      }
+
+      // v2: indexed, normalized page key (avoids loading every snapshot to filter by URL)
+      if (!store.indexNames.contains('pageKey')) {
+        store.createIndex('pageKey', 'pageKey', { unique: false });
+        store.openCursor().onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (!cursor) return;
+          const value = cursor.value;
+          value.pageKey = normalizeUrl(value.url);
+          cursor.update(value);
+          cursor.continue();
+        };
       }
     };
 
     request.onsuccess = (event) => {
       dbInstance = event.target.result;
+      dbInstance.onclose = () => { dbInstance = null; };
       resolve(dbInstance);
     };
 
@@ -39,148 +60,184 @@ export async function openDB() {
   });
 }
 
-/**
- * Save a new snapshot
- * @param {Object} snapshot 
- */
+function promisify(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function saveSnapshot(snapshot) {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.put(snapshot);
-
-    req.onsuccess = () => resolve(snapshot);
-    req.onerror = () => reject(req.error);
-  });
+  const record = { ...snapshot, pageKey: normalizeUrl(snapshot.url) };
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  await promisify(tx.objectStore(STORE_NAME).put(record));
+  return record;
 }
 
-/**
- * Retrieve snapshot by ID
- * @param {string} id 
- */
 export async function getSnapshot(id) {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.get(id);
-
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
+  const result = await promisify(db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(id));
+  return result || null;
 }
 
-/**
- * Retrieve all snapshots, sorted newest first
- */
+/** All snapshots, newest first */
 export async function getAllSnapshots() {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.getAll();
+  const results = (await promisify(db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll())) || [];
+  results.sort((a, b) => b.timestamp - a.timestamp);
+  return results;
+}
 
+/** Snapshots for a page (uses the pageKey index), newest first */
+export async function getSnapshotsForUrl(url) {
+  const db = await openDB();
+  const index = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).index('pageKey');
+  const results = (await promisify(index.getAll(normalizeUrl(url)))) || [];
+  results.sort((a, b) => b.timestamp - a.timestamp);
+  return results;
+}
+
+/** Number of snapshots for a page without loading their payloads */
+export async function countSnapshotsForUrl(url) {
+  const db = await openDB();
+  const index = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).index('pageKey');
+  return promisify(index.count(normalizeUrl(url)));
+}
+
+export async function deleteSnapshot(id) {
+  const db = await openDB();
+  await promisify(db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).delete(id));
+  return true;
+}
+
+export async function clearSnapshotsForUrl(url) {
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, 'readwrite');
+  const index = tx.objectStore(STORE_NAME).index('pageKey');
+  await new Promise((resolve, reject) => {
+    const req = index.openKeyCursor(IDBKeyRange.only(normalizeUrl(url)));
     req.onsuccess = () => {
-      const results = req.result || [];
-      results.sort((a, b) => b.timestamp - a.timestamp);
-      resolve(results);
+      const cursor = req.result;
+      if (!cursor) return resolve();
+      tx.objectStore(STORE_NAME).delete(cursor.primaryKey);
+      cursor.continue();
     };
     req.onerror = () => reject(req.error);
   });
 }
 
 /**
- * Retrieve snapshots for a specific URL, newest first
- * @param {string} url 
+ * Keep only the newest `max` snapshots of a page. Returns number deleted.
  */
-export async function getSnapshotsForUrl(url) {
-  const all = await getAllSnapshots();
-  // Match exact URL or normalized URL (without trailing slashes or hash)
-  const norm = normalizeUrl(url);
-  return all.filter(s => normalizeUrl(s.url) === norm);
-}
-
-/**
- * Delete a single snapshot by ID
- * @param {string} id 
- */
-export async function deleteSnapshot(id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.delete(id);
-
-    req.onsuccess = () => resolve(true);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * Clear all snapshots for a given URL
- * @param {string} url 
- */
-export async function clearSnapshotsForUrl(url) {
+export async function pruneSnapshotsForUrl(url, max, keepIds = []) {
   const list = await getSnapshotsForUrl(url);
-  for (const item of list) {
-    await deleteSnapshot(item.id);
+  const keep = new Set(keepIds);
+  let removed = 0;
+  let kept = 0;
+  for (const snap of list) {
+    if (keep.has(snap.id) || kept < max) {
+      kept++;
+      continue;
+    }
+    await deleteSnapshot(snap.id);
+    removed++;
   }
+  return removed;
 }
 
-/**
- * Clear all snapshots in database
- */
 export async function clearAllSnapshots() {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.clear();
-
-    req.onsuccess = () => resolve(true);
-    req.onerror = () => reject(req.error);
-  });
+  await promisify(db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).clear());
+  return true;
 }
 
-/**
- * Export all data to JSON string
- */
+/** { usage, quota } in bytes, or null if unavailable */
+export async function getStorageEstimate() {
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const { usage, quota } = await navigator.storage.estimate();
+      return { usage, quota };
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
 export async function exportAllData() {
   const all = await getAllSnapshots();
   return JSON.stringify({
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     count: all.length,
     snapshots: all
   }, null, 2);
 }
 
+const IMAGE_PREFIX = /^data:image\/(png|jpe?g|webp);base64,/;
+
 /**
- * Import snapshots from parsed JSON object or array
- * @param {Array|Object} data 
+ * Validate and sanitize one imported record. Returns a clean record or null.
+ */
+export function sanitizeImportedSnapshot(item) {
+  if (!item || typeof item !== 'object') return null;
+  if (typeof item.id !== 'string' || !/^[\w.-]{1,100}$/.test(item.id)) return null;
+  if (typeof item.url !== 'string') return null;
+  try {
+    const u = new URL(item.url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:' && u.protocol !== 'file:') return null;
+  } catch (e) {
+    return null;
+  }
+  if (typeof item.screenshot !== 'string' || !IMAGE_PREFIX.test(item.screenshot)) return null;
+
+  const full = typeof item.fullScreenshot === 'string' && IMAGE_PREFIX.test(item.fullScreenshot)
+    ? item.fullScreenshot
+    : item.screenshot;
+
+  const str = (v, fallback = '') => (typeof v === 'string' ? v : fallback);
+  const timestamp = Number.isFinite(item.timestamp) ? item.timestamp : Date.now();
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+
+  return {
+    id: item.id,
+    timestamp,
+    dateFormatted: str(item.dateFormatted, new Date(timestamp).toLocaleString()),
+    url: item.url,
+    domain: str(item.domain),
+    path: str(item.path, '/'),
+    groupKey: str(item.groupKey),
+    pageKey: normalizeUrl(item.url),
+    title: str(item.title, 'Untitled'),
+    label: str(item.label, 'Imported snapshot'),
+    screenshot: item.screenshot,
+    fullScreenshot: full,
+    fullPageFailed: !!item.fullPageFailed,
+    viewport: obj(item.viewport),
+    meta: obj(item.meta),
+    dom: { html: str(obj(item.dom).html), stats: obj(obj(item.dom).stats) },
+    css: {
+      inlineStyles: Array.isArray(obj(item.css).inlineStyles) ? item.css.inlineStyles.filter(s => s && typeof s.cssText === 'string') : [],
+      externalSheets: Array.isArray(obj(item.css).externalSheets) ? item.css.externalSheets : [],
+      computedLandmarks: obj(obj(item.css).computedLandmarks)
+    }
+  };
+}
+
+/**
+ * Import snapshots; returns { imported, skipped }.
  */
 export async function importData(data) {
-  const items = Array.isArray(data) ? data : (data.snapshots || []);
-  let count = 0;
+  const items = Array.isArray(data) ? data : (data && Array.isArray(data.snapshots) ? data.snapshots : []);
+  let imported = 0;
+  let skipped = 0;
   for (const item of items) {
-    if (item.id && item.url) {
-      await saveSnapshot(item);
-      count++;
+    const clean = sanitizeImportedSnapshot(item);
+    if (clean) {
+      await saveSnapshot(clean);
+      imported++;
+    } else {
+      skipped++;
     }
   }
-  return count;
+  return { imported, skipped };
 }
-
-/**
- * Helper to normalize URLs for grouping
- */
-export function normalizeUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.origin}${parsed.pathname.replace(/\/$/, '')}`;
-  } catch (e) {
-    return url;
-  }
-}
-

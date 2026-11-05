@@ -88,7 +88,7 @@ A snapshot captures four distinct layers simultaneously, with dual visual scopes
 - **Environment Metadata**: Page URL, domain, title, window dimensions, device pixel ratio (DPR), and scroll offsets.
 
 ### 2. Quick-Compare Popup
-- **Instant Delta Badge**: Calculates the visual regression percentage between the baseline and the latest snapshot right in the popup (`0.00% Match` or `⚠️ 2.45% Diff`).
+- **Instant Delta Badge**: Calculates an approximate (downscaled) visual difference percentage between the previous and the latest snapshot right in the popup (e.g. `2.45% diff`).
 - **Full-Page Toggle**: Option to enable/disable full-page capture alongside the standard viewport screenshot.
 - **Page Timeline**: Lists historical snapshots taken on the current URL.
 - **One-Click Jump**: Launch directly into the full comparison studio.
@@ -108,7 +108,8 @@ Switch seamlessly between 4 specialized visual comparison modes:
 4. **Onion Skin**: Transparency blend slider (0% to 100%) to spot subtle micro-shifts and padding alterations.
 
 ### 5. DOM & Code Diff Engine
-- Built with a specialized **Myers / Longest Common Subsequence (LCS)** text-diff algorithm.
+- Built on the **Myers O(ND)** line-diff algorithm with common prefix/suffix trimming, so large pages diff quickly and correctly.
+- HTML is normalized before diffing (one tag per line, script bodies and nonces removed) so noise doesn't drown real changes; long unchanged runs are collapsed.
 - Supports **Unified Diff** and **Side-by-Side Split Diff** with green addition (`+`) and red deletion (`-`) styling.
 - Structural node metric diffs: quickly identify newly added or dropped tags, images, links, or scripts.
 
@@ -119,7 +120,13 @@ Switch seamlessly between 4 specialized visual comparison modes:
   - Box Model (`padding`, `margin`, `border-radius`, `box-shadow`)
   - Layout (`display`, `position`)
 
-### 7. Standalone HTML Audit Reports
+### 7. Reducing False Positives
+- **Tolerance slider**: per-pixel color tolerance for the visual diff.
+- **Ignore regions**: `Shift`+drag on the *Difference Mask* to exclude dynamic areas (ads, timestamps, carousels). Regions are remembered per page.
+- **Golden baseline**: pin any snapshot with `☆ Golden`; it becomes the default reference for that page.
+- Animations are frozen and fonts/images awaited before capture. Compare snapshots taken at the same window size (the dashboard warns when sizes differ).
+
+### 8. Standalone HTML Audit Reports
 - Click **Export HTML Report** to generate a single, self-contained HTML file containing embedded screenshots, diff summaries, and metadata.
 - Ideal for attaching to Pull Requests, bug tickets, or sending to QA managers.
 
@@ -142,10 +149,7 @@ Switch seamlessly between 4 specialized visual comparison modes:
    ```
 3. Enable **Developer mode** via the toggle switch in the top-right corner.
 4. Click the **Load unpacked** button in the top-left corner.
-5. In the file picker, select the directory containing `manifest.json`:
-   ```text
-   d:\rhenus-devdays-project
-   ```
+5. In the file picker, select the cloned directory (the one containing `manifest.json`).
 6. The **UI Regression Detector** icon will now appear in your browser toolbar! (Pin it for easy access).
 
 ---
@@ -171,7 +175,11 @@ An interactive testbed page is included in the `demo/` folder so you can test th
 ```
 rhenus-devdays-project/
 ├── manifest.json            # Manifest V3 extension configuration & permissions
-├── .gitignore               # Git ignore rules for clean repository state
+├── package.json             # Dev tooling only (tests, lint) - the extension has no build step
+├── eslint.config.js         # Lint rules
+├── tests/                   # Unit tests (node --test)
+├── .github/workflows/ci.yml # Lint, test and package on every push / PR
+├── CHANGELOG.md  LICENSE
 ├── README.md                # Comprehensive project documentation & guide
 ├── background/
 │   └── service-worker.js    # Tab capture coordinator & message router
@@ -186,9 +194,11 @@ rhenus-devdays-project/
 │   ├── dashboard.css        # Studio design system & split-view styling
 │   └── dashboard.js         # Visual slider wipe, DOM diffing, & HTML report export
 ├── utils/
-│   ├── db.js                # Promisified IndexedDB storage manager
-│   ├── visual-diff.js       # HTML5 Canvas pixel diff & heatmap mask generator
-│   └── text-diff.js         # Myers LCS line diff & CSS landmark inspector
+│   ├── db.js                # Promisified IndexedDB storage manager (indexed, validated import)
+│   ├── common.js            # escapeHtml, URL normalization, safe URL / image helpers
+│   ├── ui.js                # In-page toast / confirm dialogs
+│   ├── visual-diff.js       # HTML5 Canvas pixel diff, ignore regions & heatmap mask generator
+│   └── text-diff.js         # Myers line diff & CSS landmark inspector
 ├── demo/
 │   └── sample-app.html      # Interactive testbed page with UI toggles
 └── icons/                   # High-res extension icons (16px, 48px, 128px)
@@ -206,7 +216,14 @@ $$\Delta = (|R_A - R_B| \times 0.299) + (|G_A - G_B| \times 0.587) + (|B_A - B_B
 Pixels exceeding the variance threshold are flagged and drawn on the difference heatmap canvas with bounding box coordinates `[minX, minY, maxX, maxY]`.
 
 ### Storage Architecture
-Screenshots and complete HTML DOM trees can exceed Chrome's `chrome.storage.local` limits (5MB–10MB). UI Regression Detector implements a promisified **IndexedDB** engine (`UIRegressionDetectorDB`) with indexes on `url`, `domain`, and `timestamp`, allowing gigabytes of snapshot history without performance degradation.
+Screenshots and complete HTML DOM trees can exceed Chrome's `chrome.storage.local` limits (5MB–10MB). UI Regression Detector implements a promisified **IndexedDB** engine (`UIRegressionDetectorDB`) with indexes on `url`, `domain`, `timestamp` and a normalized `pageKey` (origin + path + query), so per-page lookups don't scan the whole store. The newest 30 snapshots per page are kept automatically.
+
+### Development
+```bash
+npm install
+npm test      # unit tests for the diff engines and helpers
+npm run lint
+```
 
 ---
 
@@ -214,7 +231,9 @@ Screenshots and complete HTML DOM trees can exceed Chrome's `chrome.storage.loca
 
 - **No Remote Telemetry**: The extension does not communicate with external servers.
 - **Local Storage Only**: All captured data resides strictly in your browser's local IndexedDB.
-- **Permission Scoping**: Uses `activeTab` and `scripting` only when explicitly triggered by user interaction.
+- **Permission Scoping**: Uses `activeTab` and `scripting`; the content script is injected on demand when you click *Take Snapshot*, never automatically on every page. No `tabs` or host permissions.
+- **Redaction**: password / hidden input values and CSRF-token meta tags are removed from stored HTML. Snapshots still contain the rest of the page (including any personal data visible on it), so treat exported JSON and HTML reports as sensitive and avoid snapshotting pages with secrets you can't share.
+- **Safe import**: imported JSON is validated; only raster data-URL images and http(s)/file URLs are accepted.
 
 ---
 
