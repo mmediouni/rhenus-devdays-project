@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.0 - 2026-11-05
+
+### Added
+- **Approve as new baseline**: one-click button in the diff summary banner that accepts the Current (B) snapshot as the golden reference for the page.
+
 ## 1.3.1 - 2026-11-05
 
 ### Changed

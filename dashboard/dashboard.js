@@ -118,6 +118,9 @@ function setupEventListeners() {
   // Environment groups + default compare mode
   setupEnvironmentControls();
 
+  // Approve current snapshot as the golden baseline
+  document.getElementById('btn-approve-baseline').addEventListener('click', approveCurrentAsBaseline);
+
   // Export HTML Report
   document.getElementById('btn-export-report').addEventListener('click', exportHtmlReport);
 
@@ -236,6 +239,43 @@ function hostsToMask() {
   return [...hosts].sort((a, b) => b.length - a.length);
 }
 
+/**
+ * Accept the Current (B) snapshot as the golden reference for this page.
+ * Later snapshots of the page (on any environment in its group) are compared against it by default.
+ */
+function approveCurrentAsBaseline() {
+  if (!currentSnap || !selectedPageKey) {
+    toast('Select a snapshot first.', 'warn');
+    return;
+  }
+  const golden = getGoldenSnapshot(selectedPageKey);
+  if (golden && golden.id === currentSnap.id) {
+    toast('This snapshot is already the approved baseline.', 'info');
+    return;
+  }
+
+  prefs.set(`golden:${selectedPageKey}`, currentSnap.id);
+  prefs.set(`approved:${selectedPageKey}`, { id: currentSnap.id, at: Date.now() });
+  baselineSnap = currentSnap; // A = B: the comparison now shows the approved state
+
+  toast(`Approved "${currentSnap.label}" as the new baseline. Future snapshots are compared against it.`, 'success', 5000);
+  renderTimelineForSelectedPage();
+  updateComparisonDropdowns();
+  runComparison();
+}
+
+/** Reflect the approval state on the button (disabled when B is already the approved baseline). */
+function updateApproveButton() {
+  const btn = document.getElementById('btn-approve-baseline');
+  if (!btn) return;
+  const golden = selectedPageKey ? getGoldenSnapshot(selectedPageKey) : null;
+  const approved = !!(golden && currentSnap && golden.id === currentSnap.id);
+  btn.disabled = !currentSnap;
+  btn.textContent = approved ? '✓ Approved baseline' : '✓ Approve as new baseline';
+  btn.setAttribute('aria-disabled', String(!currentSnap));
+  btn.classList.toggle('is-approved', approved);
+}
+
 function getIgnoreRegions() {
   return prefs.get(`ignore:${selectedPageKey}`, []);
 }
@@ -327,6 +367,7 @@ function renderTimelineForSelectedPage() {
   }
 
   const golden = getGoldenSnapshot(selectedPageKey);
+  updateApproveButton();
 
   pageSnaps.forEach((snap) => {
     const card = document.createElement('div');

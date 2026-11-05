@@ -124,6 +124,7 @@ Switch seamlessly between 4 specialized visual comparison modes:
 - **Tolerance slider**: per-pixel color tolerance for the visual diff.
 - **Ignore regions**: `Shift`+drag on the *Difference Mask* to exclude dynamic areas (ads, timestamps, carousels). Regions are remembered per page.
 - **Golden baseline**: pin any snapshot with `☆ Golden`; it becomes the default reference for that page.
+- **Approve as new baseline**: after reviewing a diff, click **✓ Approve as new baseline** in the summary banner to accept the Current (B) snapshot as the golden reference. Every later snapshot of that page (on any environment in its group) is compared against it by default. The button shows **✓ Approved baseline** when B is already the approved one; pick another snapshot with `☆ Golden` to change it.
 - Animations are frozen and fonts/images awaited before capture. Compare snapshots taken at the same window size (the dashboard warns when sizes differ).
 
 ### 8. Comparing Environments (TEST vs QAINT vs …)

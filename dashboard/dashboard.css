@@ -552,6 +552,17 @@ body {
   flex-direction: column;
 }
 
+.approve-btn {
+  margin-left: auto;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.approve-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .diff-title-row {
   display: flex;
   align-items: center;
