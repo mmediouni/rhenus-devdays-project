@@ -26,3 +26,9 @@ yarn-error.log*
 # Node
 node_modules/
 dist/
+
+# hub server
+server/node_modules/
+server/data/
+server/.env
+.env

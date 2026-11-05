@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (branch v2.0.0-hub)
+
+### Added
+- **Hub server** (`server/`): portable API that receives screenshots from the extension, Playwright, Cypress or CI, compares them with the previous snapshot and the approved baseline, and keeps a timeline per page. Runs on Vercel, plain Node or Docker; PostgreSQL (Supabase or any) and local or Supabase storage are swappable through environment variables.
+- Dependency-free client for Playwright / CI (`server/clients/urd-client.js`).
+
 ## 1.4.0 - 2026-11-05
 
 ### Added

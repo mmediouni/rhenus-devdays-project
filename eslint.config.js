@@ -1,7 +1,7 @@
 import globals from 'globals';
 
 export default [
-  { ignores: ['node_modules/**', 'dist/**'] },
+  { ignores: ['node_modules/**', 'dist/**', 'server/node_modules/**'] },
   {
     files: ['**/*.js', '**/*.mjs'],
     languageOptions: {
@@ -16,5 +16,6 @@ export default [
     }
   },
   { files: ['content/content.js'], languageOptions: { sourceType: 'script' } },
-  { files: ['tests/**', 'eslint.config.js'], languageOptions: { globals: globals.node } }
+  { files: ['tests/**', 'eslint.config.js'], languageOptions: { globals: globals.node } },
+  { files: ['server/**'], languageOptions: { globals: globals.node } }
 ];
